@@ -228,6 +228,9 @@ class WebhookScenarioTests(APITestCase):
         retry = post_webhook(self.client, event_payload())
 
         self.assertEqual(retry.status_code, status.HTTP_200_OK)
+        # The retry changed state, so it must not claim "no change" — the "already
+        # applied" wording is reserved for the no-op replay of scenario A.
+        self.assertEqual(retry.json()["detail"], "Event applied.")
         transfer.refresh_from_db()
         self.assertEqual(transfer.status, TransferStatus.COMPLETED)
         event = WebhookEvent.objects.get()  # still one row: same event_id

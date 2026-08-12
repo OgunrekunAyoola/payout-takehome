@@ -5,7 +5,6 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .. import services
-from ..models import WebhookEventOutcome
 from .serializers import ProviderWebhookSerializer
 from .signature import verify_signature
 
@@ -53,7 +52,7 @@ class ProviderWebhookView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        event, redelivered = services.apply_webhook_event(
+        event, already_applied = services.apply_webhook_event(
             event_id=data["event_id"],
             provider_transfer_id=data["provider_transfer_id"],
             target_status=data["status"],
@@ -61,7 +60,9 @@ class ProviderWebhookView(APIView):
             payload=request.data,
         )
 
-        if redelivered and event.outcome == WebhookEventOutcome.APPLIED:
+        # "No change" only when nothing changed. A redelivery that was re-judged and
+        # applied *now* really did move the transfer, and must say so.
+        if already_applied:
             detail = "Event already applied; no change."
         else:
             detail = "Event applied."

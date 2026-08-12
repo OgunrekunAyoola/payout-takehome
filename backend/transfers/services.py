@@ -62,7 +62,11 @@ def apply_webhook_event(
 ):
     """Apply one provider event to its transfer, at most once.
 
-    Returns ``(event, redelivered)``. Raises — *after* recording the verdict on the
+    Returns ``(event, already_applied)`` — the flag is True only for the no-op replay of
+    an event whose effect already happened, never for a redelivery that was re-judged
+    and applied *now*: those two must not be reported alike, because "no change" on a
+    delivery that did change state tells the provider's logs the opposite of what our
+    ledger records. Raises — *after* recording the verdict on the
     stored event — ``NotFound`` for an unmatchable provider id, or the ``TransferConflict``
     the state machine produced. The caller's exception handler turns those into 404/409;
     the record survives either way, because rejections are exactly what someone
@@ -127,7 +131,7 @@ def apply_webhook_event(
             raise WebhookEventMismatch(event_id)
         if event.outcome == WebhookEventOutcome.APPLIED:
             return event, True
-        return _judge_event(event, target_status), True
+        return _judge_event(event, target_status), False
 
     return _judge_event(event, target_status), False
 
