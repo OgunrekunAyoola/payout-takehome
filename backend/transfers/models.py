@@ -1,4 +1,3 @@
-import uuid
 from decimal import Decimal
 
 from django.core.validators import MinValueValidator
@@ -6,7 +5,12 @@ from django.db import models
 from django.utils import timezone
 
 from .exceptions import ConcurrentTransition, IllegalTransition
+from .ids import prefixed_id
 from .states import TransferStatus, can_transition, is_terminal
+
+# The shape of a public reference, owned here so tests and consumers assert against the
+# declaration instead of restating it.
+REFERENCE_PATTERN = r"^TRF-[0-9a-f]{16}$"
 
 
 class Currency(models.TextChoices):
@@ -16,19 +20,18 @@ class Currency(models.TextChoices):
 
 
 def generate_reference() -> str:
-    """Build a public transfer reference, e.g. ``TRF-3f9a2b7c1d04``.
+    """Build a public transfer reference, e.g. ``TRF-3f9a2b7c1d04a8e2``.
 
-    Deliberately not the primary key. A sequential integer in an externally visible
-    reference tells anyone who sees one roughly how many transfers exist, and lets them
-    walk the table by counting. The auto primary key still exists and is still what
-    foreign keys point at; it just is not the public handle.
+    Deliberately not the primary key — see ``ids.prefixed_id`` for both that reasoning
+    and the entropy choice. The auto primary key still exists and is still what foreign
+    keys point at; it just is not the public handle.
     """
-    return f"TRF-{uuid.uuid4().hex[:12]}"
+    return prefixed_id("TRF-")
 
 
 class Transfer(models.Model):
     reference = models.CharField(
-        max_length=16, unique=True, default=generate_reference, editable=False
+        max_length=20, unique=True, default=generate_reference, editable=False
     )
     # Money is never a float. 18 digits with 2 decimal places covers every currency here
     # with room to spare, and the minimum of 0.01 makes "pay out nothing" impossible.
@@ -135,9 +138,14 @@ class Transfer(models.Model):
             .update(status=new_status, updated_at=now, **fields)
         )
         if rows_matched == 0:
+            # order_by() strips Meta.ordering — a dead ORDER BY on a pk probe. The
+            # instance is deliberately NOT retargeted to `actual`: its other fields are
+            # just as stale as its status, and silently half-updating it would hide
+            # that. The exception carries what the caller needs to re-read.
             actual = (
                 type(self)
-                ._default_manager.filter(pk=self.pk)
+                ._default_manager.order_by()
+                .filter(pk=self.pk)
                 .values_list("status", flat=True)
                 .first()
             )
