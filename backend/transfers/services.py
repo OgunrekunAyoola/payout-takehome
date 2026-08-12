@@ -7,6 +7,7 @@ callers.
 """
 
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 from rest_framework.exceptions import NotFound
 
 from .exceptions import IllegalTransition, TransferConflict, WebhookEventMismatch
@@ -89,11 +90,12 @@ def apply_webhook_event(
     before any judging, because judging would mix the stored event's identity with the
     incoming delivery's claim.
 
-    A residual race is accepted and documented rather than hidden: two concurrent
-    deliveries of one event where the second fetches the row while the first is still
-    judging can leave the *outcome label* momentarily contested — but never the money:
-    the transfer write is a compare-and-swap, so the state applies exactly once
-    regardless of what the label says for that instant.
+    Two concurrent deliveries of one event, where the second fetches the row while the
+    first is still judging, can both reach judging — but neither the money nor the
+    verdict can end up wrong. The transfer write is a compare-and-swap, so the state
+    applies exactly once; and ``_record`` never overwrites an APPLIED verdict, so the
+    losing delivery's rejection cannot relabel an event whose effect stands (see
+    ``_record`` for the ordering argument).
     """
     try:
         # atomic() so a refused INSERT rolls back cleanly; the connection stays usable.
@@ -161,6 +163,31 @@ def _judge_event(event: WebhookEvent, target_status: str) -> WebhookEvent:
 
 
 def _record(event: WebhookEvent, outcome: str, *, transfer) -> None:
+    """Write the verdict, with one rule: an APPLIED verdict is final.
+
+    Two concurrent deliveries of one event can both reach judging (the second reads the
+    row while the first is mid-flight). The transfer itself is safe — the CAS means the
+    transition applies exactly once — but with a plain save() the *loser's* rejection
+    could land after the winner's APPLIED and overwrite it. That is not a momentary
+    blemish: every later redelivery would be re-judged against a terminal transfer and
+    409, so the audit trail would permanently claim an applied event was rejected.
+
+    So the write excludes rows already marked APPLIED, the same conditional-UPDATE shape
+    as ``transition_to``. Order stops mattering: rejected-then-applied ends APPLIED
+    (the applied write overwrites), applied-then-rejected ends APPLIED (the rejected
+    write is refused). If the write was refused, the in-memory event is refreshed so the
+    caller reports the verdict that actually stands.
+    """
+    now = timezone.now()
+    rows_matched = (
+        WebhookEvent.objects.order_by()
+        .filter(pk=event.pk)
+        .exclude(outcome=WebhookEventOutcome.APPLIED)
+        .update(outcome=outcome, transfer=transfer, updated_at=now)
+    )
+    if rows_matched == 0:
+        event.refresh_from_db()
+        return
     event.outcome = outcome
     event.transfer = transfer
-    event.save(update_fields=["outcome", "transfer", "updated_at"])
+    event.updated_at = now

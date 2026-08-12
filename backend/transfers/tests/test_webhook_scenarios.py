@@ -2,6 +2,7 @@ from django.test import override_settings
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from transfers import services
 from transfers.models import WebhookEvent, WebhookEventOutcome
 from transfers.states import TransferStatus
 from transfers.tests.factories import make_transfer
@@ -232,3 +233,32 @@ class WebhookScenarioTests(APITestCase):
         event = WebhookEvent.objects.get()  # still one row: same event_id
         self.assertEqual(event.outcome, WebhookEventOutcome.APPLIED)
         self.assertEqual(event.transfer, transfer)
+
+
+@override_settings(PROVIDER_WEBHOOK_SECRET=WEBHOOK_TEST_SECRET)
+class WebhookVerdictTests(APITestCase):
+    def test_an_applied_verdict_cannot_be_overwritten(self):
+        # The interleave a duplicate-happy provider can produce: two deliveries of one
+        # event both reach judging, the winner applies, the loser's CAS fails and it
+        # goes to record a rejection — after the winner recorded APPLIED. The rejection
+        # must lose: the event's effect stands, and relabelling it REJECTED would make
+        # every later redelivery re-judge against a terminal transfer and 409, an audit
+        # trail permanently claiming an applied event was refused. This drives _record
+        # directly because the interleave itself needs two threads mid-request to occur.
+        transfer = make_transfer(
+            status=TransferStatus.PROCESSING, provider_transfer_id=PROVIDER_ID
+        )
+        post_webhook(self.client, event_payload())
+        stale = WebhookEvent.objects.get()  # the loser's copy of the row
+
+        services._record(
+            stale,
+            WebhookEventOutcome.REJECTED_ILLEGAL_TRANSITION,
+            transfer=transfer,
+        )
+
+        event = WebhookEvent.objects.get()
+        self.assertEqual(event.outcome, WebhookEventOutcome.APPLIED)
+        # The refused writer's in-memory copy now shows the verdict that stands, so
+        # whatever it reports upward is the truth.
+        self.assertEqual(stale.outcome, WebhookEventOutcome.APPLIED)
