@@ -1,6 +1,7 @@
 from django.test import SimpleTestCase, TestCase
 
-from transfers.exceptions import IllegalTransition
+from transfers.exceptions import ConcurrentTransition, IllegalTransition
+from transfers.models import Transfer
 from transfers.states import (
     ALLOWED_TRANSITIONS,
     TERMINAL_STATUSES,
@@ -67,14 +68,23 @@ class TransitionTableTests(SimpleTestCase):
         # KeyError discovered at runtime, on whichever request happened to hit it first.
         self.assertEqual(set(ALLOWED_TRANSITIONS), set(TransferStatus))
 
-    def test_unknown_status_is_rejected_rather_than_treated_as_terminal(self):
-        # The dangerous failure mode is a typo behaving like a terminal state: every
-        # transition out of it would be refused and the transfer would be stuck, with no
-        # error pointing at the cause.
+    def test_unknown_target_status_is_an_illegal_transition_not_a_crash(self):
+        # A provider inventing a status we have no mapping for ("reversed") must surface
+        # as the same refusal as any other forbidden move, so the webhook layer can turn
+        # it into a 4xx. An unhandled ValueError would become a 500, and a 500 is what
+        # providers retry forever.
+        with self.assertRaises(IllegalTransition):
+            can_transition(TransferStatus.PENDING, "refunded")
+
+    def test_unknown_current_status_is_rejected_rather_than_treated_as_terminal(self):
+        # A corrupt stored status is different: nothing legitimate can produce it, so it
+        # should be loud. The dangerous failure mode is a typo behaving like a terminal
+        # state — every transition out of it refused, the transfer stuck, and no error
+        # pointing at the cause.
         with self.assertRaises(ValueError):
             is_terminal("refunded")
         with self.assertRaises(ValueError):
-            can_transition(TransferStatus.PENDING, "refunded")
+            can_transition("refunded", TransferStatus.PROCESSING)
 
 
 class TransferTransitionTests(TestCase):
@@ -84,8 +94,9 @@ class TransferTransitionTests(TestCase):
         transfer = make_transfer()
 
         self.assertEqual(transfer.status, TransferStatus.PENDING)
-        self.assertTrue(transfer.reference.startswith("TRF-"))
-        self.assertNotIn(str(transfer.pk), transfer.reference)
+        # TRF- followed by 12 hex chars, i.e. random — not derived from the primary key,
+        # which would leak row counts and make references guessable by counting.
+        self.assertRegex(transfer.reference, r"^TRF-[0-9a-f]{12}$")
         self.assertIsNone(transfer.provider_transfer_id)
         self.assertFalse(transfer.is_terminal)
 
@@ -145,3 +156,26 @@ class TransferTransitionTests(TestCase):
 
         with self.assertRaises(IllegalTransition):
             transfer.transition_to(TransferStatus.PROCESSING)
+
+    def test_stale_instance_cannot_overwrite_a_concurrent_transition(self):
+        # Two copies of the same pending transfer, as two racing requests would hold.
+        # The first submits it; the second still believes it is pending and tries to
+        # cancel — legal for the status it read, but stale. The write must fail, because
+        # letting it through would leave a cancelled transfer holding a live provider id,
+        # and cancelled is terminal so no webhook could ever correct it.
+        ours = make_transfer()
+        theirs = Transfer.objects.get(pk=ours.pk)
+
+        theirs.transition_to(
+            TransferStatus.PROCESSING, provider_transfer_id="prov_first"
+        )
+
+        with self.assertRaises(ConcurrentTransition) as ctx:
+            ours.transition_to(TransferStatus.CANCELLED)
+
+        self.assertEqual(ctx.exception.expected, TransferStatus.PENDING)
+        self.assertEqual(ctx.exception.actual, TransferStatus.PROCESSING)
+        # The stored row kept the first writer's result.
+        ours.refresh_from_db()
+        self.assertEqual(ours.status, TransferStatus.PROCESSING)
+        self.assertEqual(ours.provider_transfer_id, "prov_first")

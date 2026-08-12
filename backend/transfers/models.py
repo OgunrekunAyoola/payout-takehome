@@ -3,8 +3,9 @@ from decimal import Decimal
 
 from django.core.validators import MinValueValidator
 from django.db import models
+from django.utils import timezone
 
-from .exceptions import IllegalTransition
+from .exceptions import ConcurrentTransition, IllegalTransition
 from .states import TransferStatus, can_transition, is_terminal
 
 
@@ -66,6 +67,15 @@ class Transfer(models.Model):
         # Newest first, which is what the list endpoint wants. The id tiebreak keeps
         # ordering stable when two rows share a timestamp.
         ordering = ["-created_at", "-id"]
+        constraints = [
+            # "No provider id" must be NULL and never the empty string. The column is
+            # unique, so one blank row would be tolerated and the second would fail on the
+            # unique constraint instead of on the thing that was actually wrong.
+            models.CheckConstraint(
+                condition=~models.Q(provider_transfer_id=""),
+                name="provider_transfer_id_is_null_or_non_empty",
+            )
+        ]
 
     def __str__(self) -> str:
         return f"{self.reference} {self.amount} {self.currency} ({self.status})"
@@ -86,11 +96,39 @@ class Transfer(models.Model):
         transfer needs to record ``provider_transfer_id`` at the same moment it becomes
         ``processing``, and doing that in one UPDATE means there is no window in which a
         transfer is processing with no provider id attached.
+
+        The write is a compare-and-swap: the UPDATE only matches while the stored status is
+        still the one we validated against, and no rows matched means somebody moved this
+        transfer first. Checking in Python and then writing unconditionally would let two
+        requests holding stale copies both pass the check and both write, and the second
+        would silently win — a cancel landing on top of a submit would leave a cancelled
+        transfer holding a live provider id, which is unrecoverable because cancelled is
+        terminal and the provider's webhook could never correct it.
+
+        Doing this as a conditional UPDATE rather than a row lock is deliberate: it is
+        correct on SQLite too, where ``select_for_update`` is a no-op.
         """
         if not can_transition(self.status, new_status):
             raise IllegalTransition(self.status, new_status)
 
+        expected_status = self.status
+        now = timezone.now()
+        # .update() bypasses save(), so auto_now does not fire and updated_at is set here.
+        rows_matched = (
+            type(self)
+            ._default_manager.filter(pk=self.pk, status=expected_status)
+            .update(status=new_status, updated_at=now, **fields)
+        )
+        if rows_matched == 0:
+            actual = (
+                type(self)
+                ._default_manager.filter(pk=self.pk)
+                .values_list("status", flat=True)
+                .first()
+            )
+            raise ConcurrentTransition(expected_status, new_status, actual)
+
         self.status = new_status
+        self.updated_at = now
         for name, value in fields.items():
             setattr(self, name, value)
-        self.save(update_fields=["status", "updated_at", *fields])

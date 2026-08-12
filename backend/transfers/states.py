@@ -9,6 +9,8 @@ here means a rule can only be wrong in one place.
 
 from django.db import models
 
+from .exceptions import IllegalTransition
+
 
 class TransferStatus(models.TextChoices):
     PENDING = "pending", "Pending"
@@ -35,11 +37,21 @@ ALLOWED_TRANSITIONS = {
 def can_transition(current: str, new: str) -> bool:
     """Return True if moving from ``current`` to ``new`` is legal.
 
-    Both arguments are coerced through ``TransferStatus`` so an unrecognised status
-    raises ``ValueError`` rather than quietly falling through and behaving like a
-    terminal state.
+    An unrecognised *target* raises ``IllegalTransition``: a webhook carrying a status we
+    have no mapping for (a provider adding ``reversed``, say) is a request to make a move
+    the table does not permit, and it should surface as the same 4xx as any other refused
+    move — not as an unhandled ``ValueError`` turning into a 500 that the provider then
+    retries forever.
+
+    An unrecognised *current* status still raises ``ValueError``, because that can only
+    mean the stored data is corrupt, and quietly treating a typo as a terminal state would
+    strand the transfer with no error pointing at the cause.
     """
-    return TransferStatus(new) in ALLOWED_TRANSITIONS[TransferStatus(current)]
+    try:
+        target = TransferStatus(new)
+    except ValueError:
+        raise IllegalTransition(current, new) from None
+    return target in ALLOWED_TRANSITIONS[TransferStatus(current)]
 
 
 def is_terminal(status: str) -> bool:
