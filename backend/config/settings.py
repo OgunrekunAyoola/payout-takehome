@@ -91,3 +91,11 @@ USE_TZ = True
 STATIC_URL = "static/"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Shared secret for verifying the provider's webhook signatures. The dev default exists
+# so the stack runs with zero setup; anything deployed must set it from the environment,
+# and the fire_webhook management command signs with the same value so local webhooks
+# verify out of the box.
+PROVIDER_WEBHOOK_SECRET = os.environ.get(
+    "PROVIDER_WEBHOOK_SECRET", "dev-webhook-secret-change-me"
+)
