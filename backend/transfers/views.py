@@ -1,10 +1,13 @@
 from django.db import IntegrityError, transaction
 from rest_framework import mixins, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from .canonical import canonical_fingerprint
 from .models import Transfer
+from .provider import submit_to_provider
 from .serializers import TransferCreateSerializer, TransferSerializer
+from .states import TransferStatus
 
 IDEMPOTENCY_HEADER = "Idempotency-Key"
 # Mirrors Transfer.idempotency_key.max_length. Checked here because the value reaches the
@@ -145,3 +148,32 @@ class TransferViewSet(
         return TransferSerializer(
             transfer, context=self.get_serializer_context()
         ).data
+
+    @action(detail=True, methods=["post"])
+    def submit(self, request, reference=None):
+        """Submit a pending transfer to the provider: ``pending`` → ``processing``.
+
+        The provider id is written in the same compare-and-swap UPDATE that moves the
+        status, so there is no moment where a transfer is ``processing`` with nothing for
+        a webhook to match on. Neither action checks the current status itself — the
+        state machine is the authority, and its refusals become 409s in the exception
+        handler. A view-level pre-check would be a second copy of the rules, and second
+        copies drift.
+        """
+        transfer = self.get_object()
+        transfer.transition_to(
+            TransferStatus.PROCESSING,
+            provider_transfer_id=submit_to_provider(transfer),
+        )
+        return Response(self._read_data(transfer))
+
+    @action(detail=True, methods=["post"])
+    def cancel(self, request, reference=None):
+        """Cancel a transfer that has not been submitted: ``pending`` → ``cancelled``.
+
+        Once the provider has it (``processing``), we cannot unilaterally withdraw it —
+        that is scenario E in the brief, and the transition table is what refuses it.
+        """
+        transfer = self.get_object()
+        transfer.transition_to(TransferStatus.CANCELLED)
+        return Response(self._read_data(transfer))
