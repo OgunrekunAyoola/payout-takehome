@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.sqlite3
+
+# Env
+.env
+.env.local
+
+# Node
+node_modules/
+.next/
+coverage/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Private working notes — must never be committed
+docs/
+context/
+PLAN.md
+STATE.md
+DECISIONS.md
+PLAYBOOK.md
