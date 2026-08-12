@@ -70,6 +70,11 @@ REST_FRAMEWORK = {
     # that money moved.
     "DEFAULT_AUTHENTICATION_CLASSES": [],
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],
+    # An unpaginated list over an append-only table is a response that only ever grows;
+    # bounding it from day one also means the {count, results} envelope is the contract
+    # from the first client onward, instead of a breaking change later.
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 50,
 }
 
 LANGUAGE_CODE = "en-us"
