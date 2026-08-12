@@ -176,6 +176,41 @@ class WebhookScenarioTests(APITestCase):
         event = WebhookEvent.objects.get()
         self.assertEqual(event.outcome, WebhookEventOutcome.REJECTED_UNKNOWN_TRANSFER)
 
+    def test_reused_event_id_with_different_content_is_rejected_409(self):
+        # An event_id names one immutable fact. Reusing it for a different claim —
+        # another transfer, the opposite outcome — must not be judged as if it were a
+        # redelivery: judging would route the incoming claim by the stored event's
+        # provider id, silently applying something no single event ever asserted. Here
+        # that would mean 404-ing against the stored id and leaving `other` stuck in
+        # processing with its real event swallowed.
+        transfer = make_transfer(
+            status=TransferStatus.PROCESSING, provider_transfer_id=PROVIDER_ID
+        )
+        other = make_transfer(
+            status=TransferStatus.PROCESSING,
+            provider_transfer_id="prov_" + "d" * 16,
+        )
+        post_webhook(self.client, event_payload())  # evt_0001 applied to `transfer`
+
+        response = post_webhook(
+            self.client,
+            event_payload(
+                provider_transfer_id=other.provider_transfer_id, status="failed"
+            ),
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(response.json()["event_id"], "evt_0001")
+        # Neither transfer moved, and the stored event still records the original claim.
+        other.refresh_from_db()
+        self.assertEqual(other.status, TransferStatus.PROCESSING)
+        transfer.refresh_from_db()
+        self.assertEqual(transfer.status, TransferStatus.COMPLETED)
+        event = WebhookEvent.objects.get()
+        self.assertEqual(event.outcome, WebhookEventOutcome.APPLIED)
+        self.assertEqual(event.payload["provider_transfer_id"], PROVIDER_ID)
+        self.assertEqual(event.payload["status"], "completed")
+
     def test_rejected_event_is_re_evaluated_on_redelivery(self):
         # The asymmetry that keeps transfers from sticking: a duplicate of an APPLIED
         # event must be a no-op (scenario A), but a duplicate of a REJECTED event is

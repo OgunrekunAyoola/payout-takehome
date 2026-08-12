@@ -9,7 +9,7 @@ callers.
 from django.db import IntegrityError, transaction
 from rest_framework.exceptions import NotFound
 
-from .exceptions import IllegalTransition, TransferConflict
+from .exceptions import IllegalTransition, TransferConflict, WebhookEventMismatch
 from .models import Transfer, WebhookEvent, WebhookEventOutcome
 from .provider import submit_to_provider
 from .states import TransferStatus, can_transition
@@ -83,6 +83,12 @@ def apply_webhook_event(
       forever: the provider's retry must be allowed to land, or the transfer sits in
       ``processing`` until a human notices.
 
+    Both arms assume a redelivery repeats the original claim. A delivery that reuses the
+    event_id while asserting a different provider id or status is not a redelivery — it
+    contradicts the recorded event, and is refused as ``WebhookEventMismatch`` (a 409)
+    before any judging, because judging would mix the stored event's identity with the
+    incoming delivery's claim.
+
     A residual race is accepted and documented rather than hidden: two concurrent
     deliveries of one event where the second fetches the row while the first is still
     judging can leave the *outcome label* momentarily contested — but never the money:
@@ -99,7 +105,24 @@ def apply_webhook_event(
                 occurred_at=occurred_at,
             )
     except IntegrityError:
-        event = WebhookEvent.objects.order_by().get(event_id=event_id)
+        event = (
+            WebhookEvent.objects.order_by().filter(event_id=event_id).first()
+        )
+        if event is None:
+            # The IntegrityError was not the event_id constraint after all — nothing
+            # sane to serve, so let it surface. Mirrors the create endpoint's guard on
+            # its idempotency-key race.
+            raise
+        if (
+            provider_transfer_id != event.provider_transfer_id
+            or target_status != event.payload.get("status")
+        ):
+            # Same id, different claim. This must be refused *before* any re-judging:
+            # judging would route the incoming status by the stored event's provider id
+            # (or vice versa), silently applying a claim no single event ever made.
+            # occurred_at is deliberately not compared — a resent event may carry a
+            # fresh timestamp, and the timestamp changes nothing about what we would do.
+            raise WebhookEventMismatch(event_id)
         if event.outcome == WebhookEventOutcome.APPLIED:
             return event, True
         return _judge_event(event, target_status), True

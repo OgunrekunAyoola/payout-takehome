@@ -55,3 +55,23 @@ class ConcurrentTransition(TransferConflict):
                 f"'{expected}' when moving to '{attempted}', but it is now '{actual}'."
             )
         super().__init__(actual, attempted, message)
+
+
+class WebhookEventMismatch(Exception):
+    """A delivery reused an event_id but carried different content.
+
+    An event_id names one immutable fact; a redelivery is byte-for-byte the same claim,
+    retried. A delivery that reuses the id while asserting a different transfer or a
+    different outcome is not a redelivery — it contradicts the recorded event, and
+    honouring either half silently would corrupt whichever one was true. Refused as a
+    409 naming the event, never re-judged: re-judging would apply the *incoming* claim
+    under the *stored* event's identity, and the audit trail would attribute a move to
+    an event that never asserted it.
+    """
+
+    def __init__(self, event_id: str) -> None:
+        self.event_id = event_id
+        super().__init__(
+            f"event_id '{event_id}' was already used by an event with different "
+            "content. Redeliveries must repeat the original event unchanged."
+        )
