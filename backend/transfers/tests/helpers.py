@@ -28,12 +28,22 @@ def sign_body(body: bytes, secret: str = WEBHOOK_TEST_SECRET) -> str:
     return f"sha256={digest}"
 
 
-def post_webhook(client, payload: dict, *, secret: str = WEBHOOK_TEST_SECRET, header=None):
+def post_webhook(
+    client,
+    payload: dict,
+    *,
+    secret: str = WEBHOOK_TEST_SECRET,
+    header=None,
+    body: bytes | None = None,
+):
     """POST a provider webhook the way the provider would: serialise, sign the bytes, send.
 
     ``header`` overrides the computed signature header (pass "" to omit signing).
+    ``body`` overrides the serialisation — the signature must bind to whatever bytes the
+    sender actually produced, so a test can post the same payload spelled differently.
     """
-    body = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    if body is None:
+        body = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     signature = sign_body(body, secret) if header is None else header
     extra = {"HTTP_X_PROVIDER_SIGNATURE": signature} if signature else {}
     return client.post(

@@ -1,3 +1,5 @@
+import json
+
 from django.test import override_settings
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -46,8 +48,31 @@ class WebhookSignatureTests(APITestCase):
         self.transfer.refresh_from_db()
         self.assertEqual(self.transfer.status, TransferStatus.PROCESSING)
 
+    def test_signature_binds_to_the_bytes_sent_not_to_our_canonical_form(self):
+        # A real provider signs whatever their serialiser produced — their key order,
+        # their whitespace. If verification re-canonicalised the parsed payload it would
+        # be checking bytes the provider never sent, and every provider whose JSON
+        # spelling differs from ours would be stuck in a permanent 401.
+        payload = event_payload(self.transfer.provider_transfer_id)
+        body = json.dumps(payload, indent=2).encode("utf-8")  # pretty-printed, unsorted
+
+        response = post_webhook(self.client, payload, body=body)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.transfer.refresh_from_db()
+        self.assertEqual(self.transfer.status, TransferStatus.COMPLETED)
+
     def test_malformed_signature_header_returns_401(self):
-        for header in ("sha256=", "md5=abc123", "abc123", "sha256"):
+        # The last two digests are undecodable (non-hex, non-ASCII) — they must produce
+        # the same 401 as any wrong signature, not a 500 the provider retries forever.
+        for header in (
+            "sha256=",
+            "md5=abc123",
+            "abc123",
+            "sha256",
+            "sha256=zz" + "0" * 62,
+            "sha256=é" + "0" * 63,
+        ):
             with self.subTest(header=header):
                 response = post_webhook(
                     self.client,

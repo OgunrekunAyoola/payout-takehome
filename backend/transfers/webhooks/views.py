@@ -22,11 +22,12 @@ class ProviderWebhookView(APIView):
 
     Order of checks is load-bearing:
 
-    1. **Signature.** Nothing looks at the payload until the caller has proven they hold
-       the shared secret; otherwise 404-vs-401 differences make this endpoint an oracle
-       for which provider ids exist. Every signature failure returns the same 401 body —
-       distinguishing "malformed header" from "wrong digest" is free information for a
-       prober, so the distinction is logged server-side instead.
+    1. **Signature**, computed over the raw request bytes (see signature.py for why it
+       must be the bytes). Nothing looks at the payload until the caller has proven they
+       hold the shared secret; otherwise 404-vs-401 differences make this endpoint an
+       oracle for which provider ids exist. Every signature failure — missing header,
+       malformed digest, wrong secret — returns the same 401 body, because telling a
+       prober *which* check failed is free information.
     2. **Shape validation.** 400s for missing fields or a status we have no mapping for.
     3. **Apply**, via the service layer: dedupe by event id, match by provider id,
        transition under the state machine. Refusals surface as 404/409 with the event
@@ -38,8 +39,10 @@ class ProviderWebhookView(APIView):
 
     def post(self, request):
         header = request.headers.get(SIGNATURE_HEADER, "")
+        # request.body, not request.data: the provider signed the bytes they sent, and
+        # those bytes must be read before DRF's lazy parsing consumes the stream.
         if not verify_signature(
-            request.data, header, settings.PROVIDER_WEBHOOK_SECRET
+            request.body, header, settings.PROVIDER_WEBHOOK_SECRET
         ):
             return Response(
                 {"detail": "Invalid or missing webhook signature."},
