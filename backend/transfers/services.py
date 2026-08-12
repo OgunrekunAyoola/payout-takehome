@@ -1,14 +1,16 @@
 """Operations that move transfers, shared by every caller.
 
 Views own request/response shape; this module owns orchestration — what happens around a
-state change, and in what order. "How to submit a transfer" exists exactly once here, so
-the ordering that matters cannot drift between the HTTP action, a future management
-command, or anything else that needs it. The provider webhook's apply-event logic joins
-this module when it lands.
+state change, and in what order. "How to submit a transfer" and "how to apply a provider
+event" each exist exactly once here, so the ordering that matters cannot drift between
+callers.
 """
 
-from .exceptions import IllegalTransition
-from .models import Transfer
+from django.db import IntegrityError, transaction
+from rest_framework.exceptions import NotFound
+
+from .exceptions import IllegalTransition, TransferConflict
+from .models import Transfer, WebhookEvent, WebhookEventOutcome
 from .provider import submit_to_provider
 from .states import TransferStatus, can_transition
 
@@ -52,3 +54,90 @@ def cancel_transfer(transfer: Transfer) -> Transfer:
     """
     transfer.transition_to(TransferStatus.CANCELLED)
     return transfer
+
+
+def apply_webhook_event(
+    *, event_id: str, provider_transfer_id: str, target_status: str, occurred_at, payload
+):
+    """Apply one provider event to its transfer, at most once.
+
+    Returns ``(event, redelivered)``. Raises — *after* recording the verdict on the
+    stored event — ``NotFound`` for an unmatchable provider id, or the ``TransferConflict``
+    the state machine produced. The caller's exception handler turns those into 404/409;
+    the record survives either way, because rejections are exactly what someone
+    reconciling a discrepancy needs to see (a contradiction after a terminal state, an
+    orphan event, an arrival before our submit committed).
+
+    Dedupe is insert-first: handling *begins* by inserting the event row, and the unique
+    constraint on ``event_id`` refusing the insert is what "we have seen this" means.
+    Check-then-insert would let two concurrent deliveries of one event both pass the
+    check and both apply — the double-apply the constraint exists to prevent.
+
+    Redelivery is asymmetric, and the asymmetry matters:
+
+    - Duplicate of an **applied** event → no-op. Its side effects already happened;
+      doing anything would double-apply (brief scenario A).
+    - Duplicate of a **rejected** (or crash-stranded ``received``) event → judged again
+      against *current* state. A rejection can be a function of timing — an event that
+      arrived before our submit committed was rightly refused then, and wrongly refused
+      forever: the provider's retry must be allowed to land, or the transfer sits in
+      ``processing`` until a human notices.
+
+    A residual race is accepted and documented rather than hidden: two concurrent
+    deliveries of one event where the second fetches the row while the first is still
+    judging can leave the *outcome label* momentarily contested — but never the money:
+    the transfer write is a compare-and-swap, so the state applies exactly once
+    regardless of what the label says for that instant.
+    """
+    try:
+        # atomic() so a refused INSERT rolls back cleanly; the connection stays usable.
+        with transaction.atomic():
+            event = WebhookEvent.objects.create(
+                event_id=event_id,
+                provider_transfer_id=provider_transfer_id,
+                payload=payload,
+                occurred_at=occurred_at,
+            )
+    except IntegrityError:
+        event = WebhookEvent.objects.order_by().get(event_id=event_id)
+        if event.outcome == WebhookEventOutcome.APPLIED:
+            return event, True
+        return _judge_event(event, target_status), True
+
+    return _judge_event(event, target_status), False
+
+
+def _judge_event(event: WebhookEvent, target_status: str) -> WebhookEvent:
+    """Match the event to a transfer and apply the transition, recording the verdict."""
+    transfer = (
+        Transfer.objects.order_by()
+        .filter(provider_transfer_id=event.provider_transfer_id)
+        .first()
+    )
+    if transfer is None:
+        # The signature already proved this is our provider, so an unmatchable id is
+        # never probing — it is a real integration mismatch (wrong environment, a lost
+        # write, their success/our failure). 404 makes it loud; the stored event is the
+        # dead letter an investigation starts from.
+        _record(event, WebhookEventOutcome.REJECTED_UNKNOWN_TRANSFER, transfer=None)
+        raise NotFound(
+            f"No transfer with provider_transfer_id '{event.provider_transfer_id}'."
+        )
+
+    try:
+        transfer.transition_to(target_status)
+    except TransferConflict:
+        # Covers both the flat refusal (completed → failed: a contradiction after a
+        # terminal state, brief scenario B) and losing a race. Either way the event is
+        # kept with its verdict, and a redelivery will be judged against fresh state.
+        _record(event, WebhookEventOutcome.REJECTED_ILLEGAL_TRANSITION, transfer=transfer)
+        raise
+
+    _record(event, WebhookEventOutcome.APPLIED, transfer=transfer)
+    return event
+
+
+def _record(event: WebhookEvent, outcome: str, *, transfer) -> None:
+    event.outcome = outcome
+    event.transfer = transfer
+    event.save(update_fields=["outcome", "transfer", "updated_at"])
