@@ -1,3 +1,11 @@
-# The transfer and webhook routes arrive with the endpoints that serve them. This slice is
-# the domain model and its rules only, so there is nothing to route yet.
-urlpatterns = []
+from django.urls import include, path
+from rest_framework.routers import DefaultRouter
+
+from transfers.views import TransferViewSet
+
+router = DefaultRouter()
+router.register("transfers", TransferViewSet, basename="transfer")
+
+urlpatterns = [
+    path("api/", include(router.urls)),
+]
