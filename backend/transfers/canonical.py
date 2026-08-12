@@ -1,16 +1,25 @@
-"""Canonical fingerprinting of request payloads, for idempotent-create comparison.
+"""Canonical fingerprinting of create payloads, for idempotent-create comparison.
 
 A client retrying a create is under no obligation to reproduce byte-identical JSON — a
-different library version, a re-serialised dict, a proxy that reformats, and the bytes
-change while the request means exactly the same thing. What idempotency needs to know is
-"is this semantically the same request as the one that already succeeded", so the payload
-is serialised with sorted keys and no insignificant whitespace before hashing, and two
-bodies that differ only in key order or spacing produce the same fingerprint.
+different library version may reorder keys, change whitespace, or re-serialise the amount
+``"150.00"`` as the JSON number ``150.00``. All of those are the same request, and telling
+that client 409 "you reused this key for a different request" invites the one response that
+must never happen: minting a fresh key and paying out twice.
 
-That property is specific to idempotency. It must NOT be borrowed for anything
-cryptographic: a webhook signature, for instance, is an HMAC over the exact bytes the
-sender signed, and canonicalising before verifying means verifying something other than
-what was sent.
+So the fingerprint is taken over the *validated* payload, not the raw body. Validation is
+what normalises the noise — DRF coerces and quantizes the amount to a canonical Decimal,
+unknown fields never reach the output — and hashing its result compares what the request
+means rather than how it happened to be serialised. ``sort_keys`` removes the last
+non-semantic variation, key order.
+
+``default=str`` exists for exactly one input: validated data carries ``Decimal`` amounts,
+which ``json.dumps`` cannot serialise natively, and ``str(Decimal)`` is deterministic once
+DRF has quantized it. Nothing else unexpected should reach this function — it is only ever
+fed serializer output.
+
+That tolerance is specific to idempotency. It must NOT be borrowed for anything
+cryptographic: a webhook signature is an HMAC over the exact bytes the sender signed, and
+canonicalising before verifying means verifying something other than what was sent.
 """
 
 import hashlib
