@@ -3,11 +3,10 @@ from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from . import services
 from .canonical import canonical_fingerprint
 from .models import Transfer
-from .provider import submit_to_provider
 from .serializers import TransferCreateSerializer, TransferSerializer
-from .states import TransferStatus
 
 IDEMPOTENCY_HEADER = "Idempotency-Key"
 # Mirrors Transfer.idempotency_key.max_length. Checked here because the value reaches the
@@ -33,6 +32,13 @@ class TransferViewSet(
     queryset = Transfer.objects.all()
     serializer_class = TransferSerializer
     lookup_field = "reference"
+
+    def get_queryset(self):
+        # Meta.ordering serves the list; on single-row lookups (retrieve, submit,
+        # cancel) it is a dead ORDER BY on a unique probe, so strip it — the same
+        # reasoning as the explicit order_by() on the idempotency-key probes below.
+        queryset = Transfer.objects.all()
+        return queryset if self.action == "list" else queryset.order_by()
 
     def get_serializer_class(self):
         # OPTIONS metadata, the browsable API's POST form and schema generators all ask
@@ -149,31 +155,18 @@ class TransferViewSet(
             transfer, context=self.get_serializer_context()
         ).data
 
+    # The actions delegate to services.py, where "what happens around a state change,
+    # in what order" lives exactly once. Refusals surface as TransferConflict and become
+    # 409s in the exception handler (api_errors.py).
+
     @action(detail=True, methods=["post"])
     def submit(self, request, reference=None):
-        """Submit a pending transfer to the provider: ``pending`` → ``processing``.
-
-        The provider id is written in the same compare-and-swap UPDATE that moves the
-        status, so there is no moment where a transfer is ``processing`` with nothing for
-        a webhook to match on. Neither action checks the current status itself — the
-        state machine is the authority, and its refusals become 409s in the exception
-        handler. A view-level pre-check would be a second copy of the rules, and second
-        copies drift.
-        """
-        transfer = self.get_object()
-        transfer.transition_to(
-            TransferStatus.PROCESSING,
-            provider_transfer_id=submit_to_provider(transfer),
-        )
+        """Submit a pending transfer to the provider."""
+        transfer = services.submit_transfer(self.get_object())
         return Response(self._read_data(transfer))
 
     @action(detail=True, methods=["post"])
     def cancel(self, request, reference=None):
-        """Cancel a transfer that has not been submitted: ``pending`` → ``cancelled``.
-
-        Once the provider has it (``processing``), we cannot unilaterally withdraw it —
-        that is scenario E in the brief, and the transition table is what refuses it.
-        """
-        transfer = self.get_object()
-        transfer.transition_to(TransferStatus.CANCELLED)
+        """Cancel a transfer that has not yet been submitted."""
+        transfer = services.cancel_transfer(self.get_object())
         return Response(self._read_data(transfer))

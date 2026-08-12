@@ -1,17 +1,12 @@
-from django.urls import reverse
+from unittest import mock
+
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from transfers.provider import PROVIDER_ID_PATTERN
 from transfers.states import TransferStatus
 from transfers.tests.factories import make_transfer
-
-
-def submit_url(reference: str) -> str:
-    return reverse("transfer-submit", args=[reference])
-
-
-def cancel_url(reference: str) -> str:
-    return reverse("transfer-cancel", args=[reference])
+from transfers.tests.helpers import UNKNOWN_REFERENCE, cancel_url, submit_url
 
 
 class SubmitTests(APITestCase):
@@ -23,41 +18,48 @@ class SubmitTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         body = response.json()
         self.assertEqual(body["status"], TransferStatus.PROCESSING)
-        self.assertRegex(body["provider_transfer_id"], r"^prov_[0-9a-f]{12}$")
+        self.assertRegex(body["provider_transfer_id"], PROVIDER_ID_PATTERN)
         transfer.refresh_from_db()
         self.assertEqual(transfer.status, TransferStatus.PROCESSING)
         self.assertEqual(transfer.provider_transfer_id, body["provider_transfer_id"])
 
-    def test_submit_twice_returns_409_and_keeps_the_first_provider_id(self):
+    def test_submit_twice_returns_409_and_never_contacts_the_provider_again(self):
+        # The DB column staying unchanged is not enough to assert here: with a real
+        # provider client, "call then let the state machine refuse" would instruct a
+        # second payout whose id no row ever records. The seam's call count is the
+        # invariant that matters.
         transfer = make_transfer()
-        first = self.client.post(submit_url(transfer.reference))
+        with mock.patch(
+            "transfers.services.submit_to_provider", return_value="prov_" + "a" * 16
+        ) as provider:
+            first = self.client.post(submit_url(transfer.reference))
+            second = self.client.post(submit_url(transfer.reference))
 
-        second = self.client.post(submit_url(transfer.reference))
-
+        self.assertEqual(first.status_code, status.HTTP_200_OK)
         self.assertEqual(second.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(provider.call_count, 1)
         body = second.json()
         self.assertEqual(body["current_status"], TransferStatus.PROCESSING)
         self.assertEqual(body["attempted_status"], TransferStatus.PROCESSING)
-        # A refused re-submit must not have minted a new provider id — that would break
-        # the link the first submit created, and webhooks match on it.
+        # And the refused re-submit kept the first provider id — webhooks match on it.
         transfer.refresh_from_db()
-        self.assertEqual(
-            transfer.provider_transfer_id, first.json()["provider_transfer_id"]
-        )
+        self.assertEqual(transfer.provider_transfer_id, "prov_" + "a" * 16)
 
-    def test_submit_cancelled_transfer_is_rejected_409(self):
+    def test_submit_cancelled_transfer_is_rejected_without_contacting_provider(self):
         transfer = make_transfer()
         transfer.transition_to(TransferStatus.CANCELLED)
 
-        response = self.client.post(submit_url(transfer.reference))
+        with mock.patch("transfers.services.submit_to_provider") as provider:
+            response = self.client.post(submit_url(transfer.reference))
 
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        provider.assert_not_called()
         transfer.refresh_from_db()
         self.assertEqual(transfer.status, TransferStatus.CANCELLED)
         self.assertIsNone(transfer.provider_transfer_id)
 
     def test_submit_unknown_reference_is_404(self):
-        response = self.client.post(submit_url("TRF-000000000000"))
+        response = self.client.post(submit_url(UNKNOWN_REFERENCE))
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
@@ -94,11 +96,11 @@ class CancelTests(APITestCase):
         self.assertIsNotNone(transfer.provider_transfer_id)
 
     def test_cancel_completed_transfer_is_rejected_409(self):
-        transfer = make_transfer()
-        transfer.transition_to(
-            TransferStatus.PROCESSING, provider_transfer_id="prov_done"
+        # Factory override rather than walking the machine: this is setup, not the
+        # behaviour under test, and it shouldn't break when submission's mechanics change.
+        transfer = make_transfer(
+            status=TransferStatus.COMPLETED, provider_transfer_id="prov_" + "b" * 16
         )
-        transfer.transition_to(TransferStatus.COMPLETED)
 
         response = self.client.post(cancel_url(transfer.reference))
 
@@ -118,6 +120,6 @@ class CancelTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
 
     def test_cancel_unknown_reference_is_404(self):
-        response = self.client.post(cancel_url("TRF-000000000000"))
+        response = self.client.post(cancel_url(UNKNOWN_REFERENCE))
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
