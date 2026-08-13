@@ -577,6 +577,184 @@ body {
   color: var(--text);
 }
 
+/*
+ * Custody header — the top of the detail page.
+ *
+ * The whole emotional shape of this product is waiting on someone else, so this block
+ * gets the page's only real visual weight: amount at 30px, the custody sentence in
+ * plain words, and a three-stage line whose third segment openly says it cannot know.
+ */
+.custody {
+  position: relative;
+  overflow: hidden;
+  padding: var(--space-5);
+}
+
+/* The poll heartbeat. Period equals the poll interval, so it reports a real recurring
+   event rather than decorating one — the only honest answer to "is this page still
+   watching, or did it die?". */
+.custody__pulse {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: var(--st-processing-dot);
+  animation: po-breathe var(--poll-interval) ease-in-out infinite;
+}
+
+/* Fires once, on remount, when the status changes — never on a poll that changed
+   nothing. Brief, then gone: what remains is the record, not the animation. */
+.custody--settled {
+  animation: po-wash 900ms ease-out;
+}
+
+@keyframes po-wash {
+  0% {
+    background: var(--surface-sunk);
+    border-color: var(--accent-ring);
+  }
+  100% {
+    background: var(--surface);
+    border-color: var(--border-strong);
+  }
+}
+
+.custody__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.custody__amount {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.custody__to {
+  margin: 2px 0 0;
+  color: var(--text-3);
+}
+
+.custody__line {
+  margin: var(--space-3) 0 0;
+  color: var(--text-2);
+}
+
+.custody__poll,
+.custody__stamp {
+  margin: var(--space-3) 0 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.stages {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: var(--space-4) 0 0;
+  padding: 0;
+}
+
+.stage {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: var(--space-2);
+  border-top: 2px solid var(--border);
+}
+
+.stage__label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+}
+
+.stage__value {
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.stage--done {
+  border-top-color: var(--st-completed-dot);
+}
+
+.stage--future .stage__value {
+  color: var(--text-3);
+}
+
+/* Dashed, and labelled "unknown — no ETA exists". A design element whose entire job is
+   to refuse to imply a future we cannot see. A progress bar here would be a lie. */
+.stage--unknown {
+  border-top-style: dashed;
+  border-top-color: var(--st-processing-dot);
+}
+
+.stage--unknown .stage__value {
+  color: var(--text-3);
+  font-style: italic;
+}
+
+/* Custody groups in the list. */
+.group {
+  margin-bottom: var(--space-6);
+}
+
+.group__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.group__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.group__count {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+  background: var(--surface-sunk);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.group__note {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+/* The custody rail: 3px at the row's leading edge, so state is legible in peripheral
+   vision before a word is read. It duplicates the badge, never replaces it. */
+.row > td:first-child {
+  border-left: 3px solid transparent;
+  padding-left: calc(var(--space-3) - 3px);
+}
+
+.row--ours > td:first-child {
+  border-left-color: var(--st-pending-dot);
+}
+
+.row--theirs > td:first-child {
+  border-left-color: var(--st-processing-dot);
+}
+
+.row--settled > td:first-child {
+  border-left-color: var(--border-strong);
+}
+
 .actions__buttons {
   display: flex;
   flex-wrap: wrap;

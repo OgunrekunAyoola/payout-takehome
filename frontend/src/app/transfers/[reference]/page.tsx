@@ -7,11 +7,11 @@ import {
   submitTransferAction,
 } from "@/actions/transfers";
 import { AutoRefresh } from "@/components/AutoRefresh";
+import { CustodyHeader } from "@/components/CustodyHeader";
 import { SimulateWebhookPanel } from "@/components/SimulateWebhookPanel";
-import { StatusBadge } from "@/components/StatusBadge";
 import { TransferActions } from "@/components/TransferActions";
 import { getTransfer } from "@/lib/api";
-import { formatAmount, formatTimestamp } from "@/lib/format";
+import { formatTimestamp } from "@/lib/format";
 import { isTerminal } from "@/lib/transitions";
 
 /**
@@ -60,33 +60,13 @@ export default async function TransferDetailPage({
 
       <div className="section-head">
         <h1 className="mono">{transfer.reference}</h1>
-        {/* The status is the one thing on this page that changes without the user
-            doing anything — a provider webhook lands and the poll picks it up. Before
-            this live region, the notices announced themselves but the status itself
-            did not, so a screen-reader user watching a transfer resolve was told
-            nothing at all. The hidden sentence carries what a sighted user gets from
-            the badge plus its surroundings: what happened, to how much, for whom. */}
-        <div aria-live="polite" className="status-region">
-          <StatusBadge status={transfer.status} />
-          <span className="visually-hidden">
-            Transfer {transfer.status}.{" "}
-            {formatAmount(transfer.amount, transfer.currency)} to{" "}
-            {transfer.recipient_ref}.
-          </span>
-        </div>
       </div>
 
+      {/* Keyed on status so a resolution remounts this and the one-shot wash fires from
+          CSS alone — and cannot fire on a poll that changed nothing. */}
+      <CustodyHeader key={transfer.status} transfer={transfer} />
+
       <dl className="facts card">
-        <div>
-          <dt>Amount</dt>
-          <dd className="numeric">
-            {formatAmount(transfer.amount, transfer.currency)}
-          </dd>
-        </div>
-        <div>
-          <dt>Recipient reference</dt>
-          <dd>{transfer.recipient_ref}</dd>
-        </div>
         <div>
           <dt>Provider transfer id</dt>
           <dd className="mono">
@@ -96,6 +76,10 @@ export default async function TransferDetailPage({
               </span>
             )}
           </dd>
+        </div>
+        <div>
+          <dt>Currency</dt>
+          <dd>{transfer.currency}</dd>
         </div>
         <div>
           <dt>Created</dt>

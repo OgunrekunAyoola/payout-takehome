@@ -51,6 +51,42 @@ export function canCancel(status: TransferStatus): boolean {
 }
 
 /**
+ * Who holds the money right now.
+ *
+ * Five statuses are a state machine, but an operator's question is smaller than that:
+ * can I act, or am I waiting on someone else? Three answers — `ours`, `theirs`,
+ * `settled` — and that grouping is what the badge shape, the list sectioning and the
+ * detail page's hierarchy all encode. It costs nothing at the DOM level and it is the
+ * difference between reading five colours and reading one fact.
+ *
+ * Derived from the transition table rather than kept as a fourth list, for the same
+ * reason `isTerminal` is: a second declaration of the same fact drifts the first time
+ * someone adds a status.
+ */
+export type CustodyZone = "ours" | "theirs" | "settled";
+
+export function zoneFor(status: TransferStatus): CustodyZone {
+  if (isTerminal(status)) return "settled";
+  // Still moving. If we can still hand it over, it is ours; if we cannot, it is
+  // because we already did.
+  return canSubmit(status) ? "ours" : "theirs";
+}
+
+/** The custody fact, as a sentence — what is true of this transfer right now. */
+export function custodyLine(status: TransferStatus): string {
+  switch (zoneFor(status)) {
+    case "ours":
+      return "Not yet sent. Fully under your control.";
+    case "theirs":
+      return "With the provider. Only their webhook can resolve it.";
+    case "settled":
+      if (status === "completed") return "Money arrived. This is final and cannot be changed.";
+      if (status === "failed") return "The provider reported failure. This is final and cannot be changed.";
+      return "Cancelled before it was ever sent. This is final and cannot be changed.";
+  }
+}
+
+/**
  * Why an action is unavailable, phrased for a person.
  *
  * A disabled button with no explanation reads as a broken page — the user cannot tell
