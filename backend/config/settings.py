@@ -91,3 +91,22 @@ USE_TZ = True
 STATIC_URL = "static/"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Shared secret for verifying the provider's webhook signatures. The dev default exists
+# so the stack runs with zero setup; the fire_webhook management command signs with the
+# same value so local webhooks verify out of the box.
+#
+# Outside DEBUG the default is refused at boot rather than merely discouraged in a
+# comment: this secret is the only thing standing between the internet and a forged
+# "completed" event, it is published in this repository, and a deploy that silently kept
+# it would fail in the quietest possible way — by working.
+_DEV_WEBHOOK_SECRET = "dev-webhook-secret-change-me"
+PROVIDER_WEBHOOK_SECRET = os.environ.get("PROVIDER_WEBHOOK_SECRET", _DEV_WEBHOOK_SECRET)
+if not DEBUG and PROVIDER_WEBHOOK_SECRET == _DEV_WEBHOOK_SECRET:
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured(
+        "PROVIDER_WEBHOOK_SECRET must be set in the environment when DEBUG is off — "
+        "the development default is published in the repository and would let anyone "
+        "sign webhooks."
+    )

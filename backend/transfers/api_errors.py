@@ -25,12 +25,22 @@ from rest_framework.response import Response
 from rest_framework.views import exception_handler as drf_exception_handler
 from rest_framework.views import set_rollback
 
-from .exceptions import ConcurrentTransition, TransferConflict
+from .exceptions import ConcurrentTransition, TransferConflict, WebhookEventMismatch
 
 logger = logging.getLogger(__name__)
 
 
 def api_exception_handler(exc, context):
+    if isinstance(exc, WebhookEventMismatch):
+        set_rollback()
+        # Not client noise: the provider (the signature proved it is them) asserted two
+        # different facts under one event id. That is an integration bug on one side or
+        # the other, and it should be visible in logs before it is visible in a ledger.
+        logger.warning("Webhook event reused with different content: %s", exc)
+        return Response(
+            {"detail": str(exc), "event_id": exc.event_id},
+            status=status.HTTP_409_CONFLICT,
+        )
     if isinstance(exc, TransferConflict):
         # Mirror DRF's own handler: mark the transaction for rollback before returning,
         # so a refused request can never commit partial work if this view later runs

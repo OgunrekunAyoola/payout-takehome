@@ -155,3 +155,65 @@ class Transfer(models.Model):
         self.updated_at = now
         for name, value in fields.items():
             setattr(self, name, value)
+
+
+class WebhookEventOutcome(models.TextChoices):
+    # The row is inserted with RECEIVED *before* it is judged — insert-first is what makes
+    # dedupe atomic — so a crash between insert and verdict leaves a visibly unjudged row
+    # that redelivery will re-evaluate. There is deliberately no DUPLICATE outcome: a
+    # duplicate delivery never gets a row (the unique constraint refuses it), so
+    # "duplicate" is a property of a delivery, not of the stored event.
+    RECEIVED = "received", "Received, not yet judged"
+    APPLIED = "applied", "Applied"
+    REJECTED_ILLEGAL_TRANSITION = (
+        "rejected_illegal_transition",
+        "Rejected: illegal transition",
+    )
+    REJECTED_UNKNOWN_TRANSFER = "rejected_unknown_transfer", "Rejected: unknown transfer"
+
+
+class WebhookEvent(models.Model):
+    """Every authenticated provider event we have seen, and what we did with it.
+
+    Two jobs. First, dedupe: ``event_id`` is unique, and handling an event *begins* by
+    trying to insert this row — an ``IntegrityError`` means we have seen it. The obvious
+    alternative, check-then-insert, has a race a duplicate-happy provider will find: two
+    deliveries of one event arrive together, both pass the check, both apply. Only the
+    database can make that decision atomic.
+
+    Second, audit: rejections are recorded, not just successes. The interesting events —
+    contradictions after a terminal state, orphans with no matching transfer, arrivals
+    before our submit committed — are exactly what someone reconciling a discrepancy
+    needs, and storing only the happy path would erase them. The stored ``outcome`` is
+    also what lets redelivery be handled asymmetrically: a duplicate of an *applied*
+    event must be a no-op (its side effects already happened), while a duplicate of a
+    *rejected* event is re-evaluated against current state — the rejection may have been
+    a function of timing, and replaying it forever would strand the transfer.
+    """
+
+    event_id = models.CharField(max_length=128, unique=True)
+    provider_transfer_id = models.CharField(max_length=64, db_index=True)
+    # The full payload as received (post-signature, post-parse), so an investigation has
+    # the evidence and not just our verdict on it.
+    payload = models.JSONField()
+    outcome = models.CharField(
+        max_length=32,
+        choices=WebhookEventOutcome.choices,
+        default=WebhookEventOutcome.RECEIVED,
+    )
+    transfer = models.ForeignKey(
+        Transfer,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="webhook_events",
+    )
+    occurred_at = models.DateTimeField(null=True, blank=True)
+    received_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-received_at", "-id"]
+
+    def __str__(self) -> str:
+        return f"{self.event_id} → {self.outcome}"
