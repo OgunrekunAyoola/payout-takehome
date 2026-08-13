@@ -59,7 +59,9 @@ export function SimulateWebhookPanel({
   if (!providerId) {
     return (
       <section className="card simulate" aria-labelledby="simulate-heading">
-        <h2 id="simulate-heading">Simulate a provider webhook</h2>
+        <h2 id="simulate-heading">
+          <span className="chip">Dev tool</span> Simulate a provider webhook
+        </h2>
         <p className="muted">
           Nothing to simulate yet. The provider only learns about this transfer when it
           is submitted, and a webhook is matched on the{" "}
@@ -89,7 +91,8 @@ export function SimulateWebhookPanel({
       <h2 id="simulate-heading">Simulate a provider webhook</h2>
       <p className="muted">
         Posts a signed event to <code>/api/webhooks/provider/</code> for{" "}
-        <code>{providerId}</code>, exactly as the provider would.
+        <code>{providerId}</code>, exactly as the provider would. In a real deployment
+        the provider holds the signing key and this panel does not exist.
       </p>
 
       <div className="actions__buttons">
