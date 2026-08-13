@@ -1,0 +1,13 @@
+node_modules/
+.next/
+coverage/
+*.tsbuildinfo
+
+# Environment
+.env.local
+
+# Written and re-added automatically by `next dev` (Next 16 generates editor/agent
+# guidance files). They are tooling scratch, not part of this project's source, and
+# deleting them only makes `next dev` recreate them — so they are ignored instead.
+AGENTS.md
+CLAUDE.md

@@ -1,0 +1,882 @@
+/*
+ * Hand-written CSS, no framework.
+ *
+ * The organising idea is custody, not status. Five statuses are a state machine; the
+ * operator's question is smaller than that — can I act, or am I waiting on someone
+ * else? Three answers: ours (pending), theirs (processing), settled (the three
+ * terminals). The badge shape, the row rail and the page hierarchy all encode that,
+ * which is why an operator reads one fact instead of five colours.
+ *
+ * Two palette rules hold throughout:
+ *
+ * 1. The accent is spent only on interactive intent, never on status. An operator
+ *    should never have to work out whether a coloured thing is a button or a state.
+ * 2. Red appears in exactly two places — a failed transfer, and a genuine system
+ *    failure where we do not know what happened. Nothing else may use it.
+ *
+ * Contrast ratios in the comments are computed against that theme's --surface, which is
+ * the background the text actually sits on.
+ */
+
+:root {
+  --canvas: #f7f6f4; /* warm, so surfaces read as paper on it */
+  --surface: #fffefc;
+  --surface-sunk: #f1efec; /* table header, inert fills, the dev panel */
+  --border: #e3e0da; /* inner rules, row separators */
+  --border-strong: #cdc8bf; /* card edges, input borders */
+  --text: #1c1a17; /* 17.4:1 */
+  --text-2: #57524a; /* 7.7:1 — secondary, blocked-reason copy */
+  --text-3: #78736a; /* 4.7:1 — labels, meta, timestamps. Floor for real content */
+  --text-disabled: #8d887f; /* 3.1:1 on sunk. Inactive controls are WCAG-exempt */
+  --accent: #4c40a6; /* 8.1:1 — interactive intent. Never a status */
+  --accent-hover: #3e3390;
+  --accent-text: #fffefc;
+  --accent-ring: #c9c2f0;
+
+  /* Status: a cool family of its own, so state never reads as an action.
+     pending has no fill — it is the only state entirely ours, and needs no alert. */
+  --st-pending-bg: transparent;
+  --st-pending-text: #57524a;
+  --st-pending-dot: #78736a;
+  --st-processing-bg: #e6eff4;
+  --st-processing-text: #1d4e63;
+  --st-processing-dot: #2b7595;
+  --st-completed-bg: #e7efe4;
+  --st-completed-text: #2c5232;
+  --st-completed-dot: #43804d;
+  --st-failed-bg: #f6e7e3;
+  --st-failed-text: #7a2b1e;
+  --st-failed-dot: #a8412c;
+  --st-cancelled-bg: #eeece8;
+  --st-cancelled-text: #5f5a51;
+  --st-cancelled-dot: #a09a90;
+
+  /* Notice tones. --moved and --refused are refusals, which are correct outcomes and
+     must not borrow failure styling; --error is the only red. */
+  --notice-moved-bg: #e6eff4;
+  --notice-moved-text: #1d4e63;
+  --notice-refused-bg: #eeece8;
+  --notice-refused-text: #4a453e;
+  --notice-ok-bg: #e7efe4;
+  --notice-ok-text: #2c5232;
+  --notice-error-bg: #f6e7e3;
+  --notice-error-text: #7a2b1e;
+
+  --radius-control: 3px;
+  --radius-card: 5px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  --poll-interval: 3000ms;
+}
+
+/* Not an inversion. Warm near-black, borders carrying more of the hierarchy because
+   tints read weaker on dark, and status text lifted in lightness so it holds against
+   its own tinted background rather than against the canvas. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --canvas: #171614;
+    --surface: #1f1e1b;
+    --surface-sunk: #121110; /* darker than canvas, inverting light's relationship */
+    --border: #302e2a;
+    --border-strong: #45423d;
+    --text: #f0eeea; /* 14.4:1 */
+    --text-2: #a39e95; /* 6.3:1 */
+    --text-3: #8a857c; /* 4.6:1 */
+    --text-disabled: #6b665e; /* 2.9:1 — exempt, and never the sole carrier */
+    --accent: #a49cf0; /* 6.8:1 */
+    --accent-hover: #bcb5f7; /* hover lightens on dark rather than darkening */
+    --accent-text: #1f1e1b;
+    --accent-ring: #3a3468;
+
+    --st-pending-bg: transparent;
+    --st-pending-text: #a39e95;
+    --st-pending-dot: #8a857c;
+    --st-processing-bg: #16303a;
+    --st-processing-text: #8fcfe4;
+    --st-processing-dot: #4fa8c6;
+    --st-completed-bg: #1a2e1e;
+    --st-completed-text: #93cfa0;
+    --st-completed-dot: #55a468;
+    --st-failed-bg: #35201a;
+    --st-failed-text: #eda695;
+    --st-failed-dot: #c76a52;
+    --st-cancelled-bg: #262420;
+    --st-cancelled-text: #a39e95;
+    --st-cancelled-dot: #6b665e;
+
+    --notice-moved-bg: #16303a;
+    --notice-moved-text: #8fcfe4;
+    --notice-refused-bg: #262420;
+    --notice-refused-text: #a39e95;
+    --notice-ok-bg: #1a2e1e;
+    --notice-ok-text: #93cfa0;
+    --notice-error-bg: #35201a;
+    --notice-error-text: #eda695;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* 13.5px base, down from 15px. This is a console, not an article. */
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--text);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+/* Every amount and timestamp gets tabular figures, so digits form a column that can
+   actually be scanned for the outlier. */
+.numeric,
+.facts dd,
+.table td {
+  font-variant-numeric: tabular-nums;
+}
+
+.masthead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 48px;
+  padding: 0 var(--space-5);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.masthead__brand {
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--text);
+  text-decoration: none;
+  letter-spacing: -0.01em;
+}
+
+.masthead__note {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.shell {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-5);
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: var(--space-6);
+  align-items: start;
+}
+
+@media (max-width: 860px) {
+  /* Monitoring is the narrow-screen job; creating is not. List first, form after. */
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-3);
+}
+
+.section-head h1 {
+  font-size: 26px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+
+.status-region {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Elevation is essentially gone; hairlines carry the hierarchy. Tools have edges. */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  padding: var(--space-5);
+  margin-bottom: var(--space-4);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 10px var(--space-3);
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.table th {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+  background: var(--surface-sunk);
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.numeric {
+  white-space: nowrap;
+}
+
+/* In the list, amounts right-align so the decimal points form a column — the whole
+   reason a queue of payouts is a table and not a list of cards. Scoped to the table:
+   on the detail page the amount is a fact in a grid, not a column to scan. */
+.table .numeric {
+  text-align: right;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+}
+
+.muted {
+  color: var(--text-3);
+}
+
+.empty {
+  padding: var(--space-6);
+  background: var(--surface);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-card);
+  color: var(--text-2);
+}
+
+/*
+ * Badges: two axes, not five colours.
+ *
+ * Custody zone sets the *form* — hollow dot for ours, pulsing for theirs, solid for
+ * settled. Outcome sets the *hue*, and only within the settled zone. So the shape alone
+ * answers "can I act?" in full monochrome, and colour only refines an answer already
+ * given. The status word is always present; colour is never the sole carrier.
+ */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  /* Uppercase is presentational only — the DOM text stays lowercase, which is both
+     what the API returns and what the tests match on. */
+  text-transform: uppercase;
+  background: var(--surface-sunk);
+  color: var(--text-2);
+}
+
+.badge::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  flex: none;
+}
+
+/* ours — the only badge with no fill, and a hollow dot */
+.badge--pending {
+  background: var(--st-pending-bg);
+  color: var(--st-pending-text);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
+.badge--pending::before {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--st-pending-dot);
+}
+
+/* theirs — cool cyan, not amber. Waiting on someone else is not a warning. The dot
+   pulses on the poll cycle, so the badge itself reports that we are still watching. */
+.badge--processing {
+  background: var(--st-processing-bg);
+  color: var(--st-processing-text);
+}
+
+.badge--processing::before {
+  background: var(--st-processing-dot);
+  animation: po-dot var(--poll-interval) ease-in-out infinite;
+}
+
+/* settled — solid dot, hue carries the outcome */
+.badge--completed {
+  background: var(--st-completed-bg);
+  color: var(--st-completed-text);
+}
+
+.badge--completed::before {
+  background: var(--st-completed-dot);
+}
+
+.badge--failed {
+  background: var(--st-failed-bg);
+  color: var(--st-failed-text);
+}
+
+.badge--failed::before {
+  background: var(--st-failed-dot);
+}
+
+/* Split from failed deliberately: one red for both said the money did not arrive,
+   when the truth is it was never sent. */
+.badge--cancelled {
+  background: var(--st-cancelled-bg);
+  color: var(--st-cancelled-text);
+}
+
+.badge--cancelled::before {
+  background: var(--st-cancelled-dot);
+}
+
+.button {
+  font: inherit;
+  font-weight: 500;
+  padding: 10px var(--space-4);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    transform 80ms ease;
+}
+
+.button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.button--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.button--primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: var(--accent-text);
+}
+
+.button--danger {
+  color: var(--st-failed-text);
+  border-color: var(--border-strong);
+}
+
+.button--danger:hover:not(:disabled) {
+  border-color: var(--st-failed-dot);
+  color: var(--st-failed-text);
+}
+
+.button--ghost {
+  background: transparent;
+}
+
+/* A disabled control must look disabled, not faded. `opacity: 0.5` dragged the danger
+   button's red-on-white to roughly 2.2:1, which reads as a rendering fault rather than
+   an inert control. A flat sunk fill says "off"; the low-contrast label is a deliberate
+   WCAG 1.4.3 exemption for inactive controls, and the reason it is disabled is stated
+   at full contrast below the buttons regardless. */
+.button:disabled {
+  background: var(--surface-sunk);
+  border-color: var(--border);
+  color: var(--text-disabled);
+  cursor: not-allowed;
+  transform: none;
+}
+
+/*
+ * Loading is not "off", and this rule exists because the two were previously drawn
+ * identically. Both are non-clickable, but they mean opposite things — one says "your
+ * click landed and is in flight", the other says "this action is unavailable" — and an
+ * operator who cannot tell them apart does not know whether their money instruction
+ * was accepted. A working button keeps its identity and gains a pulsing dot on a
+ * faster cycle than the poll heartbeat, so the two rhythms are not confusable.
+ *
+ * Ordered after .button:disabled deliberately: equal specificity, so source order is
+ * what lets it win.
+ */
+.button--working:disabled {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--text);
+  cursor: progress;
+}
+
+.button--primary.button--working:disabled {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.button--working:disabled::after {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 8px;
+  border-radius: 999px;
+  background: currentColor;
+  vertical-align: middle;
+  animation: po-dot 1200ms ease-in-out infinite;
+}
+
+/* Focus, which the build previously left to the browser default — invisible against
+   the primary button's accent fill. Ring plus halo so it survives on paper and on the
+   accent. :focus-visible only, so mouse clicks stay quiet. */
+:where(a, button, input, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--accent-ring);
+}
+
+.form__row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: var(--space-3);
+}
+
+.form h2,
+.actions h2,
+.simulate h2 {
+  margin: 0 0 var(--space-3);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.form label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+}
+
+.form input,
+.form select {
+  font: inherit;
+  padding: 9px 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* The border does the colour work; the fill only tints faintly, so a form with three
+   errors does not become a red page. */
+.form input[aria-invalid="true"] {
+  border-color: var(--st-failed-dot);
+  background: var(--st-failed-bg);
+}
+
+.form__hint {
+  margin: var(--space-3) 0 0;
+  font-size: 11.5px;
+  color: var(--text-3);
+  word-break: break-all;
+}
+
+.field-error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--st-failed-text);
+}
+
+.notice {
+  margin: var(--space-3) 0 0;
+  padding: 10px var(--space-3);
+  border-radius: var(--radius-control);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+/* The world moved before the click landed. Cool, never red: the system worked exactly
+   as designed and nothing was sent. */
+.notice--moved {
+  background: var(--notice-moved-bg);
+  color: var(--notice-moved-text);
+}
+
+/* The move does not exist and never will. Neutral — being told no by a state machine
+   is information, not a fault. Distinguished from --moved by permanence. */
+.notice--refused {
+  background: var(--notice-refused-bg);
+  color: var(--notice-refused-text);
+}
+
+.notice--ok {
+  background: var(--notice-ok-bg);
+  color: var(--notice-ok-text);
+}
+
+/* One of the only two reds in the product. Reserved for a genuine failure, where the
+   transfer's real state is unknown to us. */
+.notice--error {
+  background: var(--notice-error-bg);
+  color: var(--notice-error-text);
+}
+
+.notice__headline {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.notice__hint {
+  display: inline;
+  opacity: 0.9;
+}
+
+.detail {
+  max-width: 780px;
+}
+
+.backlink {
+  display: inline-block;
+  margin-bottom: var(--space-3);
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 12.5px;
+}
+
+.backlink:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-4);
+  margin: 0 0 var(--space-4);
+}
+
+.facts dt {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+  margin-bottom: 3px;
+}
+
+.facts dd {
+  margin: 0;
+  color: var(--text);
+}
+
+/*
+ * Custody header — the top of the detail page.
+ *
+ * The whole emotional shape of this product is waiting on someone else, so this block
+ * gets the page's only real visual weight: amount at 30px, the custody sentence in
+ * plain words, and a three-stage line whose third segment openly says it cannot know.
+ */
+.custody {
+  position: relative;
+  overflow: hidden;
+  padding: var(--space-5);
+}
+
+/* The poll heartbeat. Period equals the poll interval, so it reports a real recurring
+   event rather than decorating one — the only honest answer to "is this page still
+   watching, or did it die?". */
+.custody__pulse {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 2px;
+  background: var(--st-processing-dot);
+  animation: po-breathe var(--poll-interval) ease-in-out infinite;
+}
+
+/* Fires once, on remount, when the status changes — never on a poll that changed
+   nothing. Brief, then gone: what remains is the record, not the animation. */
+.custody--settled {
+  animation: po-wash 900ms ease-out;
+}
+
+@keyframes po-wash {
+  0% {
+    background: var(--surface-sunk);
+    border-color: var(--accent-ring);
+  }
+  100% {
+    background: var(--surface);
+    border-color: var(--border-strong);
+  }
+}
+
+.custody__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.custody__amount {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.custody__to {
+  margin: 2px 0 0;
+  color: var(--text-3);
+}
+
+.custody__line {
+  margin: var(--space-3) 0 0;
+  color: var(--text-2);
+}
+
+.custody__poll,
+.custody__stamp {
+  margin: var(--space-3) 0 0;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+.stages {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin: var(--space-4) 0 0;
+  padding: 0;
+}
+
+.stage {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: var(--space-2);
+  border-top: 2px solid var(--border);
+}
+
+.stage__label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-3);
+}
+
+.stage__value {
+  font-size: 12.5px;
+  color: var(--text);
+}
+
+.stage--done {
+  border-top-color: var(--st-completed-dot);
+}
+
+.stage--future .stage__value {
+  color: var(--text-3);
+}
+
+/* Dashed, and labelled "unknown — no ETA exists". A design element whose entire job is
+   to refuse to imply a future we cannot see. A progress bar here would be a lie. */
+.stage--unknown {
+  border-top-style: dashed;
+  border-top-color: var(--st-processing-dot);
+}
+
+.stage--unknown .stage__value {
+  color: var(--text-3);
+  font-style: italic;
+}
+
+/* Custody groups in the list. */
+.group {
+  margin-bottom: var(--space-6);
+}
+
+.group__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.group__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.group__count {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-3);
+  background: var(--surface-sunk);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.group__note {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+/* The custody rail: 3px at the row's leading edge, so state is legible in peripheral
+   vision before a word is read. It duplicates the badge, never replaces it. */
+.row > td:first-child {
+  border-left: 3px solid transparent;
+  padding-left: calc(var(--space-3) - 3px);
+}
+
+.row--ours > td:first-child {
+  border-left-color: var(--st-pending-dot);
+}
+
+.row--theirs > td:first-child {
+  border-left-color: var(--st-processing-dot);
+}
+
+.row--settled > td:first-child {
+  border-left-color: var(--border-strong);
+}
+
+.actions__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* Why an action is unavailable, at full contrast and unconditionally in the page —
+   this is what makes a genuinely `disabled` button acceptable, because the information
+   the aria-disabled pattern exists to rescue is already here. */
+.actions__reasons {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.actions__reasons strong {
+  color: var(--text);
+}
+
+/* The simulator is scaffolding, and it should look like it: dashed and recessed, so it
+   never reads as part of the product. It would not exist in a real deployment, where
+   the provider holds the signing key. */
+.simulate {
+  border-style: dashed;
+  background: var(--surface-sunk);
+}
+
+.chip {
+  display: inline-block;
+  padding: 2px 6px;
+  margin-right: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-3);
+  vertical-align: middle;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/*
+ * Motion, and what each piece reports.
+ *
+ * po-dot is the poll heartbeat: its period *is* the poll interval, so it answers the
+ * only question a waiting operator actually has — is this page still watching, or did
+ * it die? It is not decoration, because it is caused by a real recurring event, and
+ * when polling stops the motion stops with it. That stillness is then also true.
+ */
+@keyframes po-dot {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(0.55);
+    opacity: 0.45;
+  }
+}
+
+@keyframes po-breathe {
+  0%,
+  100% {
+    opacity: 0.18;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
