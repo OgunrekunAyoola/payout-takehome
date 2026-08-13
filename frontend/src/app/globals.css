@@ -1,0 +1,372 @@
+/*
+ * Hand-written CSS, no framework.
+ *
+ * The brief asks for minimal and clear and rates polish — loading states, disabled
+ * controls, visible status — above visuals. A utility framework would have been more
+ * dependency and build config than this many screens can justify.
+ *
+ * Colours are defined as tokens once and adapt to the viewer's theme; status colours
+ * are never the only carrier of meaning (each badge also spells out its status).
+ */
+
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --border: #dfe3e8;
+  --text: #14181f;
+  --muted: #5b6471;
+  --accent: #1f5fbf;
+  --accent-text: #ffffff;
+  --danger: #b3261e;
+  --ok-bg: #e6f4ea;
+  --ok-text: #145c2c;
+  --warn-bg: #fef3d7;
+  --warn-text: #7a5300;
+  --err-bg: #fdeceb;
+  --err-text: #8c1d18;
+  --idle-bg: #eceff3;
+  --idle-text: #3d4550;
+  --radius: 8px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12151a;
+    --surface: #1a1f26;
+    --border: #2c333d;
+    --text: #e8ebef;
+    --muted: #9aa4b2;
+    --accent: #6ea8fe;
+    --accent-text: #0b1220;
+    --danger: #f2836f;
+    --ok-bg: #17351f;
+    --ok-text: #9fe0b0;
+    --warn-bg: #3a2f10;
+    --warn-text: #f0cd7a;
+    --err-bg: #3a1b19;
+    --err-text: #f5a79c;
+    --idle-bg: #242b34;
+    --idle-text: #c3cad4;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.masthead {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.masthead__brand {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--text);
+  text-decoration: none;
+  letter-spacing: -0.01em;
+}
+
+.masthead__note {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.shell {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 860px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.section-head h1 {
+  font-size: 1.35rem;
+  margin: 0;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.table th {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  background: var(--bg);
+}
+
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.numeric {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.92em;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.empty {
+  padding: 1.5rem;
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+}
+
+/* Status badges. The word is always present; colour only reinforces it. */
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: capitalize;
+  background: var(--idle-bg);
+  color: var(--idle-text);
+}
+
+.badge--pending {
+  background: var(--idle-bg);
+  color: var(--idle-text);
+}
+
+.badge--processing {
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+
+.badge--completed {
+  background: var(--ok-bg);
+  color: var(--ok-text);
+}
+
+.badge--failed,
+.badge--cancelled {
+  background: var(--err-bg);
+  color: var(--err-text);
+}
+
+.button {
+  font: inherit;
+  padding: 0.45rem 0.85rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.button--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.button--danger {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.button--ghost {
+  background: transparent;
+}
+
+/* A disabled control must look disabled, not merely be inert. */
+.button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.form__row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 0.85rem;
+}
+
+.form h2 {
+  margin-top: 0;
+  font-size: 1.05rem;
+}
+
+.form label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.form input,
+.form select {
+  font: inherit;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.form input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.form__hint {
+  margin-bottom: 0;
+  font-size: 0.75rem;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.field-error {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--danger);
+}
+
+.notice {
+  margin: 0.75rem 0 0;
+  padding: 0.6rem 0.75rem;
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+}
+
+.notice--error {
+  background: var(--err-bg);
+  color: var(--err-text);
+}
+
+.notice--ok {
+  background: var(--ok-bg);
+  color: var(--ok-text);
+}
+
+.notice__hint {
+  display: inline-block;
+  opacity: 0.85;
+}
+
+.detail {
+  max-width: 760px;
+}
+
+.backlink {
+  display: inline-block;
+  margin-bottom: 0.75rem;
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.9rem;
+  margin: 0 0 1rem;
+}
+
+.facts dt {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-bottom: 0.15rem;
+}
+
+.facts dd {
+  margin: 0;
+}
+
+.actions h2,
+.simulate h2 {
+  margin-top: 0;
+  font-size: 1.05rem;
+}
+
+.actions__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.actions__reasons {
+  margin: 0.75rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
