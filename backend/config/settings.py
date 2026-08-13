@@ -75,6 +75,10 @@ REST_FRAMEWORK = {
     # from the first client onward, instead of a breaking change later.
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 50,
+    # Domain exceptions (IllegalTransition, ConcurrentTransition) become 409s in one
+    # place, so submit, cancel and the provider webhook all refuse an illegal move with
+    # the same error shape. See transfers/api_errors.py.
+    "EXCEPTION_HANDLER": "transfers.api_errors.api_exception_handler",
 }
 
 LANGUAGE_CODE = "en-us"

@@ -1,22 +1,14 @@
 import json
 
-from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from transfers.models import Transfer
+from transfers.models import REFERENCE_PATTERN, Transfer
 from transfers.states import TransferStatus
 from transfers.tests.factories import make_transfer
+from transfers.tests.helpers import UNKNOWN_REFERENCE, create_url, detail_url
 
 PAYLOAD = {"amount": "150.00", "currency": "NGN", "recipient_ref": "acct-778"}
-
-
-def create_url() -> str:
-    return reverse("transfer-list")
-
-
-def detail_url(reference: str) -> str:
-    return reverse("transfer-detail", args=[reference])
 
 
 class CreateTransferTests(APITestCase):
@@ -41,7 +33,7 @@ class CreateTransferTests(APITestCase):
         self.assertEqual(body["status"], TransferStatus.PENDING)
         self.assertEqual(body["amount"], "150.00")
         self.assertEqual(body["currency"], "NGN")
-        self.assertRegex(body["reference"], r"^TRF-[0-9a-f]{12}$")
+        self.assertRegex(body["reference"], REFERENCE_PATTERN)
         self.assertIsNone(body["provider_transfer_id"])
         # The idempotency machinery is internal; the response shape should not leak it.
         self.assertNotIn("idempotency_key", body)
@@ -196,6 +188,6 @@ class ReadTransferTests(APITestCase):
         self.assertEqual(body["status"], TransferStatus.PENDING)
 
     def test_unknown_reference_is_404(self):
-        response = self.client.get(detail_url("TRF-000000000000"))
+        response = self.client.get(detail_url(UNKNOWN_REFERENCE))
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

@@ -1,7 +1,7 @@
 from django.test import SimpleTestCase, TestCase
 
 from transfers.exceptions import ConcurrentTransition, IllegalTransition
-from transfers.models import Transfer
+from transfers.models import REFERENCE_PATTERN, Transfer
 from transfers.states import (
     ALLOWED_TRANSITIONS,
     TERMINAL_STATUSES,
@@ -94,9 +94,9 @@ class TransferTransitionTests(TestCase):
         transfer = make_transfer()
 
         self.assertEqual(transfer.status, TransferStatus.PENDING)
-        # TRF- followed by 12 hex chars, i.e. random — not derived from the primary key,
-        # which would leak row counts and make references guessable by counting.
-        self.assertRegex(transfer.reference, r"^TRF-[0-9a-f]{12}$")
+        # Random hex, not derived from the primary key — which would leak row counts
+        # and make references guessable by counting. The pattern is owned by models.py.
+        self.assertRegex(transfer.reference, REFERENCE_PATTERN)
         self.assertIsNone(transfer.provider_transfer_id)
         self.assertFalse(transfer.is_terminal)
 

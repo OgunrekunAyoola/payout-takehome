@@ -1,7 +1,9 @@
 from django.db import IntegrityError, transaction
 from rest_framework import mixins, status, viewsets
+from rest_framework.decorators import action
 from rest_framework.response import Response
 
+from . import services
 from .canonical import canonical_fingerprint
 from .models import Transfer
 from .serializers import TransferCreateSerializer, TransferSerializer
@@ -30,6 +32,13 @@ class TransferViewSet(
     queryset = Transfer.objects.all()
     serializer_class = TransferSerializer
     lookup_field = "reference"
+
+    def get_queryset(self):
+        # Meta.ordering serves the list; on single-row lookups (retrieve, submit,
+        # cancel) it is a dead ORDER BY on a unique probe, so strip it — the same
+        # reasoning as the explicit order_by() on the idempotency-key probes below.
+        queryset = Transfer.objects.all()
+        return queryset if self.action == "list" else queryset.order_by()
 
     def get_serializer_class(self):
         # OPTIONS metadata, the browsable API's POST form and schema generators all ask
@@ -145,3 +154,19 @@ class TransferViewSet(
         return TransferSerializer(
             transfer, context=self.get_serializer_context()
         ).data
+
+    # The actions delegate to services.py, where "what happens around a state change,
+    # in what order" lives exactly once. Refusals surface as TransferConflict and become
+    # 409s in the exception handler (api_errors.py).
+
+    @action(detail=True, methods=["post"])
+    def submit(self, request, reference=None):
+        """Submit a pending transfer to the provider."""
+        transfer = services.submit_transfer(self.get_object())
+        return Response(self._read_data(transfer))
+
+    @action(detail=True, methods=["post"])
+    def cancel(self, request, reference=None):
+        """Cancel a transfer that has not yet been submitted."""
+        transfer = services.cancel_transfer(self.get_object())
+        return Response(self._read_data(transfer))
