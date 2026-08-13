@@ -60,7 +60,20 @@ export default async function TransferDetailPage({
 
       <div className="section-head">
         <h1 className="mono">{transfer.reference}</h1>
-        <StatusBadge status={transfer.status} />
+        {/* The status is the one thing on this page that changes without the user
+            doing anything — a provider webhook lands and the poll picks it up. Before
+            this live region, the notices announced themselves but the status itself
+            did not, so a screen-reader user watching a transfer resolve was told
+            nothing at all. The hidden sentence carries what a sighted user gets from
+            the badge plus its surroundings: what happened, to how much, for whom. */}
+        <div aria-live="polite" className="status-region">
+          <StatusBadge status={transfer.status} />
+          <span className="visually-hidden">
+            Transfer {transfer.status}.{" "}
+            {formatAmount(transfer.amount, transfer.currency)} to{" "}
+            {transfer.recipient_ref}.
+          </span>
+        </div>
       </div>
 
       <dl className="facts card">

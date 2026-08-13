@@ -9,7 +9,47 @@ import {
   cancelBlockedReason,
   submitBlockedReason,
 } from "@/lib/transitions";
-import type { ApiError, Transfer } from "@/lib/types";
+import type { ApiError, Transfer, TransferStatus } from "@/lib/types";
+
+/**
+ * Three outcomes, three tones — the distinction the UI previously collapsed.
+ *
+ * Both kinds of 409 arrive with `current_status`, so its mere presence cannot tell them
+ * apart. What separates them is whether the transfer is still where this page thought
+ * it was:
+ *
+ * - **moved** — the status changed underneath us, almost always because a provider
+ *   webhook landed between render and click. The action was refused, not lost, and
+ *   nothing was sent. Retrying against the new state may well be valid.
+ * - **refused** — the transfer is exactly where we thought, and the move simply does
+ *   not exist from here. Retrying is pointless, forever.
+ * - **error** — a genuine failure. We do not know what the transfer's real state is,
+ *   which is the one case that earns red.
+ */
+type NoticeTone = "moved" | "refused" | "error";
+
+function toneFor(error: ApiError, renderedStatus: TransferStatus): NoticeTone {
+  if (error.kind !== "conflict") return "error";
+  if (error.currentStatus && error.currentStatus !== renderedStatus) return "moved";
+  return "refused";
+}
+
+const HEADLINES: Record<NoticeTone, string> = {
+  moved: "Nothing was sent — the transfer moved first.",
+  refused: "This move does not exist.",
+  error: "The action could not be completed.",
+};
+
+/**
+ * What was *not* done — the clause an operator moving money actually needs, and the
+ * one missing from every message before this. "Nothing was sent" and "nothing was
+ * confirmed either way" are different facts and must not be phrased alike.
+ */
+const CONSEQUENCES: Record<NoticeTone, string> = {
+  moved: "Nothing was sent to the provider. This page has been re-read and now shows the current state.",
+  refused: "Nothing was sent to the provider. Retrying will refuse again.",
+  error: "The transfer's real state is unknown from here — nothing was confirmed either way.",
+};
 
 /**
  * Submit and Cancel for one transfer.
@@ -81,12 +121,14 @@ export function TransferActions({
       <h2 id="actions-heading">Actions</h2>
 
       <div className="actions__buttons">
+        {/* No `aria-disabled` beside `disabled` — it is redundant on a genuinely
+            disabled control. And no `title`: it is invisible on touch and to most
+            screen readers, and the reason is stated in the page below, at full
+            contrast, unconditionally. */}
         <button
           type="button"
           className="button button--primary"
           disabled={!submitAllowed || pending}
-          aria-disabled={!submitAllowed || pending}
-          title={submitReason ?? "Submit this transfer to the provider"}
           onClick={() => run("submit", onSubmit)}
         >
           {running === "submit" ? "Submitting…" : "Submit to provider"}
@@ -96,8 +138,6 @@ export function TransferActions({
           type="button"
           className="button button--danger"
           disabled={!cancelAllowed || pending}
-          aria-disabled={!cancelAllowed || pending}
-          title={cancelReason ?? "Cancel this transfer"}
           onClick={() => run("cancel", onCancel)}
         >
           {running === "cancel" ? "Cancelling…" : "Cancel transfer"}
@@ -121,22 +161,32 @@ export function TransferActions({
         </ul>
       )}
 
-      {/* aria-live so the refusal is announced, not just drawn. */}
+      {/* aria-live so the refusal is announced, not just drawn. `role="status"` for the
+          two refusals — they are correct outcomes, and an assertive alert would be
+          overstating them. `role="alert"` only for a genuine failure. */}
       <div aria-live="polite">
-        {error && (
-          <p className="notice notice--error" role="alert">
-            {error.message}
-            {error.kind === "conflict" && error.currentStatus && (
-              <>
-                {" "}
-                <span className="notice__hint">
-                  The transfer is now <strong>{error.currentStatus}</strong>; this
-                  page has been refreshed to match.
-                </span>
-              </>
-            )}
-          </p>
-        )}
+        {error &&
+          (() => {
+            const tone = toneFor(error, transfer.status);
+            return (
+              <p
+                className={`notice notice--${tone}`}
+                role={tone === "error" ? "alert" : "status"}
+              >
+                <strong className="notice__headline">{HEADLINES[tone]}</strong>
+                {/* The server's own sentence, verbatim — it names the exact move it
+                    refused, which is more precise than anything restated here. */}
+                {error.message}{" "}
+                <span className="notice__hint">{CONSEQUENCES[tone]}</span>
+                {tone === "moved" && error.currentStatus && (
+                  <span className="notice__hint">
+                    {" "}
+                    It is now <strong>{error.currentStatus}</strong>.
+                  </span>
+                )}
+              </p>
+            );
+          })()}
       </div>
     </section>
   );

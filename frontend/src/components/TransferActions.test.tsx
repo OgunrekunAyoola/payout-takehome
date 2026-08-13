@@ -96,10 +96,82 @@ describe("TransferActions — running an action", () => {
   });
 
   /**
-   * The important one. A transfer can be settled by a provider webhook between the
-   * moment this page rendered and the moment the button is clicked, so the server
-   * refusing a move the UI believed was legal is an expected outcome — not a crash.
-   * The user must be told what the transfer is *now*, and the page must re-read.
+   * A refusal is not a failure, and the two 409s are not each other.
+   *
+   * Both kinds carry `current_status`, so presence alone cannot distinguish them —
+   * getting this wrong is how a correct outcome ends up styled as an error and an
+   * operator concludes they broke something. The rule under test: the status differing
+   * from what the page rendered means the world moved; the same status means the move
+   * never existed.
+   */
+  it("styles a moved transfer as a refusal, not a failure, and says nothing was sent", async () => {
+    const onSubmit = vi.fn(async () => ({
+      ok: false,
+      error: {
+        kind: "conflict" as const,
+        message: "A transfer in 'completed' cannot move to 'processing'.",
+        currentStatus: "completed" as const,
+      },
+    }));
+    renderActions("pending", { onSubmit });
+
+    await userEvent.click(submitButton());
+
+    const notice = await screen.findByRole("status");
+    expect(notice).toHaveTextContent(/nothing was sent/i);
+    expect(notice).toHaveTextContent(/moved first/i);
+    // Not an alert, and not the failure tone.
+    expect(notice.className).toContain("notice--moved");
+    expect(notice.className).not.toContain("notice--error");
+  });
+
+  it("styles an impossible move as permanently refused rather than as movement", async () => {
+    // The transfer is exactly where the page thought it was, and the move was still
+    // refused. Nothing moved, so retrying is pointless — a different message from
+    // "the world moved", and it must not claim the state changed.
+    const onSubmit = vi.fn(async () => ({
+      ok: false,
+      error: {
+        kind: "conflict" as const,
+        message: "A transfer in 'pending' cannot move to 'processing'.",
+        currentStatus: "pending" as const,
+      },
+    }));
+    renderActions("pending", { onSubmit });
+
+    await userEvent.click(submitButton());
+
+    const notice = await screen.findByRole("status");
+    expect(notice.className).toContain("notice--refused");
+    expect(notice).toHaveTextContent(/does not exist/i);
+    expect(notice).toHaveTextContent(/refuse again/i);
+    // It must not tell the operator the transfer moved, because it didn't.
+    expect(notice).not.toHaveTextContent(/moved first/i);
+  });
+
+  it("reserves the failure tone and role=alert for a genuine failure", async () => {
+    const onSubmit = vi.fn(async () => ({
+      ok: false,
+      error: {
+        kind: "network" as const,
+        message: "Could not reach the API at http://127.0.0.1:8000.",
+      },
+    }));
+    renderActions("pending", { onSubmit });
+
+    await userEvent.click(submitButton());
+
+    const notice = await screen.findByRole("alert");
+    expect(notice.className).toContain("notice--error");
+    // The honest clause: we do not know what happened to the transfer.
+    expect(notice).toHaveTextContent(/unknown from here/i);
+  });
+
+  /**
+   * A transfer can be settled by a provider webhook between the moment this page
+   * rendered and the moment the button is clicked, so the server refusing a move the
+   * UI believed was legal is an expected outcome — not a crash. The user must be told
+   * what the transfer is *now*, and the page must re-read.
    */
   it("shows the conflict and re-reads when the transfer moved underneath the page", async () => {
     const onSubmit = vi.fn(async () => ({

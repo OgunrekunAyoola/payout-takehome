@@ -26,6 +26,16 @@
   --err-text: #8c1d18;
   --idle-bg: #eceff3;
   --idle-text: #3d4550;
+  /* A refused-but-correct outcome is neither success nor failure, so it gets its own
+     cool family. Waiting on someone else is not a warning, and being told "no" by a
+     state machine is not a fault. */
+  --info-bg: #e6eff4;
+  --info-text: #1d4e63;
+  /* Recessed fills: table headers, and inert controls. A disabled button needs a flat
+     sunk fill rather than reduced opacity — see .button:disabled. */
+  --surface-sunk: #f1efec;
+  --text-disabled: #8d887f;
+  --accent-ring: #c9c2f0;
   --radius: 8px;
 }
 
@@ -47,6 +57,11 @@
     --err-text: #f5a79c;
     --idle-bg: #242b34;
     --idle-text: #c3cad4;
+    --info-bg: #16303a;
+    --info-text: #8fcfe4;
+    --surface-sunk: #121110;
+    --text-disabled: #6b665e;
+    --accent-ring: #3a3468;
   }
 }
 
@@ -200,10 +215,17 @@ body {
   color: var(--ok-text);
 }
 
-.badge--failed,
-.badge--cancelled {
+/* The only red in the status system. */
+.badge--failed {
   background: var(--err-bg);
   color: var(--err-text);
+}
+
+/* Split from failed, deliberately: one red for both said "the money did not arrive"
+   when the truth is it was never sent. Different facts, different colours. */
+.badge--cancelled {
+  background: var(--idle-bg);
+  color: var(--idle-text);
 }
 
 .button {
@@ -236,10 +258,28 @@ body {
   background: transparent;
 }
 
-/* A disabled control must look disabled, not merely be inert. */
+/* A disabled control must look disabled, not merely be inert — and not by fading.
+   `opacity: 0.5` dragged the danger button's red-on-white to roughly 2.2:1, which
+   reads as a rendering fault rather than as an inert control. A flat sunk fill with a
+   low-contrast label says "off" without pretending to be broken.
+
+   The label deliberately sits below 4.5:1: WCAG 1.4.3 exempts inactive controls, and a
+   disabled button that meets text contrast does not read as disabled. Nothing is lost,
+   because the reason it is disabled is stated at full contrast below the buttons. */
 .button:disabled {
-  opacity: 0.5;
+  background: var(--surface-sunk);
+  border-color: var(--border);
+  color: var(--text-disabled);
   cursor: not-allowed;
+}
+
+/* Focus, which the build previously left entirely to the browser default — invisible
+   on the accent-filled primary button. A 2px ring plus a halo so it survives on both
+   paper and accent fills. :focus-visible only, so mouse clicks stay quiet. */
+:where(a, button, input, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px var(--accent-ring);
 }
 
 .form__row {
@@ -294,6 +334,8 @@ body {
   font-size: 0.9rem;
 }
 
+/* Red is reserved for exactly two things: a failed transfer, and a genuine system
+   failure where we do not know what happened. Nothing else in the product may use it. */
 .notice--error {
   background: var(--err-bg);
   color: var(--err-text);
@@ -302,6 +344,27 @@ body {
 .notice--ok {
   background: var(--ok-bg);
   color: var(--ok-text);
+}
+
+/* A 409 that means "the transfer moved before your click landed". The system worked
+   exactly as designed, so this must not borrow the failure styling — an operator
+   reading red concludes they broke something, when nothing was even sent. */
+.notice--moved {
+  background: var(--info-bg);
+  color: var(--info-text);
+}
+
+/* A 409 that means "this move does not exist and never will". Also not a fault: being
+   told no by a state machine is information. Distinguished from --moved by permanence
+   rather than by severity, so it is neutral rather than cool. */
+.notice--refused {
+  background: var(--idle-bg);
+  color: var(--idle-text);
+}
+
+.notice__headline {
+  display: block;
+  font-weight: 600;
 }
 
 .notice__hint {
