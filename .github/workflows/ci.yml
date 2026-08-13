@@ -1,0 +1,67 @@
+# Both halves, on every push and PR.
+#
+# The jobs mirror exactly what the README tells a human to run — same commands, same
+# versions — so "CI is green" and "it works on a reviewer's machine" are the same claim.
+# The frontend job also builds the production bundle: tests passing while the build is
+# broken is a state this workflow is specifically shaped to make impossible.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # Matches local development. Django 6.1 requires >= 3.12.
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # No env vars on purpose: the suite must pass after nothing but an install,
+      # because a test suite that needs setup is a test suite a reviewer won't run.
+      # (DEBUG defaults on; the dev webhook secret is refused only outside DEBUG,
+      # and there's a test asserting that refusal.)
+      - name: Run tests
+        run: python manage.py test transfers --verbosity 2
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # npm ci, not npm install: resolve the exact lockfile tree this was tested
+      # against, and fail loudly if the lockfile and manifest ever drift apart.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build
