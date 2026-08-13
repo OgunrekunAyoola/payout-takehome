@@ -34,7 +34,10 @@ export function Elapsed({ since }: { since: string }) {
   if (Number.isNaN(from)) return null;
 
   return (
-    <span className="numeric" suppressHydrationWarning>
+    /* No suppressHydrationWarning: the mount gate above means the server pass and the
+       first client pass both render null, so there is no mismatch to suppress —
+       and suppressing would only hide a real one later. */
+    <span className="numeric">
       {formatDuration(Math.max(0, now - from))} elapsed
     </span>
   );

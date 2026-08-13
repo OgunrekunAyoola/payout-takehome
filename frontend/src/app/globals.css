@@ -426,10 +426,40 @@ body {
   transform: none;
 }
 
-/* Loading keeps the primary's identity but drops a step, so "working" is visibly
-   distinct from "off", and carries a pulsing dot on its own faster cycle. */
-.button--primary:disabled {
-  background: var(--surface-sunk);
+/*
+ * Loading is not "off", and this rule exists because the two were previously drawn
+ * identically. Both are non-clickable, but they mean opposite things — one says "your
+ * click landed and is in flight", the other says "this action is unavailable" — and an
+ * operator who cannot tell them apart does not know whether their money instruction
+ * was accepted. A working button keeps its identity and gains a pulsing dot on a
+ * faster cycle than the poll heartbeat, so the two rhythms are not confusable.
+ *
+ * Ordered after .button:disabled deliberately: equal specificity, so source order is
+ * what lets it win.
+ */
+.button--working:disabled {
+  background: var(--surface);
+  border-color: var(--border-strong);
+  color: var(--text);
+  cursor: progress;
+}
+
+.button--primary.button--working:disabled {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+
+.button--working:disabled::after {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 8px;
+  border-radius: 999px;
+  background: currentColor;
+  vertical-align: middle;
+  animation: po-dot 1200ms ease-in-out infinite;
 }
 
 /* Focus, which the build previously left to the browser default — invisible against

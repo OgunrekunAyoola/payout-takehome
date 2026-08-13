@@ -207,6 +207,11 @@ describe("TransferActions — running an action", () => {
     await waitFor(() => expect(submitButton()).toBeDisabled());
     expect(cancelButton()).toBeDisabled();
 
+    // Both are locked, but only the clicked one is *working*. Drawn alike, an operator
+    // cannot tell "your instruction is in flight" from "this action is unavailable".
+    expect(submitButton().className).toContain("button--working");
+    expect(cancelButton().className).not.toContain("button--working");
+
     release({ ok: true });
     await waitFor(() => expect(refresh).toHaveBeenCalled());
   });

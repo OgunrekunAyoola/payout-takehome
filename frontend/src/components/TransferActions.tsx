@@ -125,9 +125,14 @@ export function TransferActions({
             disabled control. And no `title`: it is invisible on touch and to most
             screen readers, and the reason is stated in the page below, at full
             contrast, unconditionally. */}
+        {/* `--working` on the clicked button only. Both buttons lock while either
+            request is in flight, but "in flight" and "unavailable" mean opposite things
+            and must not be drawn alike. */}
         <button
           type="button"
-          className="button button--primary"
+          className={`button button--primary${
+            running === "submit" ? " button--working" : ""
+          }`}
           disabled={!submitAllowed || pending}
           onClick={() => run("submit", onSubmit)}
         >
@@ -136,7 +141,9 @@ export function TransferActions({
 
         <button
           type="button"
-          className="button button--danger"
+          className={`button button--danger${
+            running === "cancel" ? " button--working" : ""
+          }`}
           disabled={!cancelAllowed || pending}
           onClick={() => run("cancel", onCancel)}
         >
