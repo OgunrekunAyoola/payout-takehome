@@ -8,8 +8,8 @@ settled asynchronously by signed provider webhooks.
 
 Everything the brief asks for is implemented: the state machine, idempotent create, ops
 submit/cancel, the signed provider webhook with dedupe by `event_id`, scenarios A–E, and a
-minimal UI that creates a transfer and watches its status change. **81 tests** — 57 backend,
-24 frontend.
+minimal UI that creates a transfer and watches its status change. **94 tests** — 57 backend,
+37 frontend.
 
 ---
 
@@ -46,7 +46,7 @@ documents both variables if you want to point at a different backend.
 
 ```bash
 cd backend  && .venv/bin/python manage.py test transfers   # 57 tests
-cd frontend && npm test                                    # 24 tests
+cd frontend && npm test                                    # 37 tests
 ```
 
 Also available in the frontend: `npm run typecheck`, `npm run build`.
@@ -165,24 +165,69 @@ find). And the stored verdict is what lets redelivery be asymmetric — see belo
 | File | Holds |
 | --- | --- |
 | `src/lib/api.ts` | The only place this app talks to Django. Returns results, never throws |
-| `src/lib/transitions.ts` | The lifecycle mirrored client-side, so buttons can be disabled |
+| `src/lib/transitions.ts` | The lifecycle mirrored client-side: legal actions, and custody zones |
 | `src/lib/provider-signature.ts` | HMAC signing for the simulator. Server-only |
 | `src/actions/transfers.ts` | Server actions: create, submit, cancel, simulate |
+| `src/components/CustodyHeader.tsx` | Who holds the money, and the three-stage line |
 | `src/components/TransferActions.tsx` | Submit/Cancel, disabled per state, 409-tolerant |
 | `src/components/CreateTransferForm.tsx` | The create form and its idempotency key |
 | `src/components/SimulateWebhookPanel.tsx` | Stand in for the provider, including redelivery |
+| `src/components/StatusBadge.tsx` | One status, as custody shape plus outcome hue |
+| `src/components/AutoRefresh.tsx` | Polls while anything can still change |
+| `src/components/Elapsed.tsx` | How long we have been waiting. The only client-only render |
 
-Screens: a list with status badges and the create form, and a detail page showing status,
-timestamps and provider id with the two actions plus the simulator.
+Screens: a list of transfers **grouped by custody** — *In flight* above *Settled* — with the
+create form beside it, and a detail page leading with a custody header (amount, recipient,
+status, three-stage line) above the provider id and timestamps, the two actions, and the
+simulator.
 
 Client components receive the server actions **as props** rather than importing them. That
 keeps them pure functions of their inputs, which is what makes the brief's named frontend test
 possible without standing up a server.
 
+#### The UI is organised around custody, not status
+
+Five statuses are a state machine, but an operator's question is smaller than that: *can I act,
+or am I waiting on someone else?* Three answers — `ours` (pending), `theirs` (processing),
+`settled` (the three terminals) — and `zoneFor()` derives them from the same transition table
+rather than restating them, so they cannot drift. That one function drives the badge shape, the
+list grouping and the detail hierarchy, which is the difference between reading five colours and
+reading one fact.
+
+It also decides the two rules the palette follows: the accent is spent only on interactive
+intent and never on status, so a coloured thing is never ambiguous between a button and a state;
+and red appears in exactly two places, a failed transfer and a genuine system failure.
+
+#### A refusal is not a failure
+
+Three outcomes, three tones, because they need opposite responses from the operator. A transfer
+that **moved** underneath the page (a webhook landed between render and click) was refused, not
+lost, and nothing was sent. A move that is **refused** outright will refuse forever, so retrying
+is pointless. Only a genuine **failure** earns red, because it is the only case where the
+transfer's real state is unknown to us.
+
+Both kinds of 409 carry `current_status`, so its presence cannot tell them apart. What separates
+them is whether the status differs from the one the page rendered from — which the component
+already knows. Every message also states what was **not** done, which is the sentence an
+operator moving money actually needs.
+
+#### Waiting, without lying about it
+
+A transfer in `processing` has no ETA and never will: the webhook arrives when it arrives. So
+the waiting screen shows three things that are all true *now* and predict nothing — stage (three
+segments, the third drawn dashed and labelled `unknown — no ETA exists`), elapsed time counting
+up, and a heartbeat whose period **is** the poll interval. When polling stops the motion stops,
+and that stillness is also true. A progress bar there would be a claim we have no basis for.
+
 Status stays live by polling — `router.refresh()` every 3s while anything on the page can still
 move, paused on a hidden tab, stopped dead at a terminal status. SSE or a WebSocket would push
 the change instead of asking for it, but both need the backend to hold and notify connections,
 and the brief puts that infrastructure out of scope.
+
+Timestamps are formatted with a pinned locale and `timeZone: "UTC"` so a server render and a
+browser hydration produce identical strings. The elapsed counter cannot satisfy that — it is
+derived from the current clock — so it is the one mount-gated client component, rendering
+nothing until `useEffect` fires.
 
 ### API
 
@@ -375,6 +420,25 @@ uncontrolled inputs a rejected create silently wiped everything the user had typ
 `reuses the same idempotency key when a failed create is retried` failed on its second submit,
 which is how it surfaced. The inputs are controlled now.
 
+Two more worth naming, because they are the same *shape* of mistake as the signature bug — code
+that agreed with itself and was wrong anyway:
+
+**Both kinds of 409 read as failure.** The UI rendered every refusal in the error tone, so a
+transfer settled by a webhook a moment before the click — the system working exactly as designed,
+with nothing sent — told the operator in red that something had broken. The fix needed a rule to
+separate "the world moved" from "this move does not exist", and the obvious rule is wrong: both
+errors carry `current_status`, so testing for its presence collapses the two cases. The rule that
+works compares it against the status the page rendered from. Tests:
+`styles a moved transfer as a refusal, not a failure` and
+`styles an impossible move as permanently refused rather than as movement`.
+
+**A pending transfer claimed its settlement was unknowable.** The waiting screen draws its third
+stage dashed and labelled `unknown — no ETA exists`, which is honest for a transfer the provider
+holds. The same treatment was reaching transfers that had never been submitted, where nothing was
+unknowable because nothing had been sent. Unit tests passed; driving the real lifecycle in a
+browser is what exposed it, which is the argument for doing that at all. Now locked by
+`does not treat an unsent transfer's settlement as unknowable`.
+
 ---
 
 ## 6. What I deliberately left out
@@ -422,6 +486,13 @@ change the row. Hand-written scenarios cover the cases I thought of.
 reasoned about in comments and tested by simulating the interleaving. I'd rather prove them
 under genuine contention against Postgres, where `select_for_update` also becomes an option.
 
+**Expose the settling event on the transfer endpoint.** The detail page records *when* a transfer
+settled and that the record is immutable, but not *which* event did it — the `event_id` lives in
+`WebhookEvent` and the transfer serializer does not return it. Surfacing it would let the UI name
+the event that moved the money, which is the honest close of the audit loop: the screen and the
+audit trail would then agree, in public, on one identifier. I left it out rather than have the UI
+imply an id it cannot see.
+
 **A webhook/event view in the UI**, reading the audit trail the backend already keeps — the
 rejected events are the interesting ones and nothing surfaces them yet.
 
@@ -466,7 +537,9 @@ carrying its code and the tests for the edge cases it introduces:
 2. `feat/create-transfer-idempotency` — create with `Idempotency-Key` semantics
 3. `feat/submit-and-cancel` — the ops actions and one conflict vocabulary (scenario E)
 4. `feat/provider-webhook` — signature, dedupe, scenarios A–D, and the review fixes above
-5. `feat/frontend` — the Next.js UI and its tests
+5. `feat/frontend` — the Next.js UI and its tests, then a UI/UX pass in three further
+   commits: the accessibility and refusal-vs-failure fixes, then tokens and type, then the
+   custody structure and the waiting screen
 
 Commit messages carry the reasoning, not a restatement of the diff — the *why* for the
 non-obvious calls lives there and in the code comments, so a reviewer meets the argument next to
