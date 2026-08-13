@@ -67,6 +67,12 @@ class Transfer(models.Model):
         # Newest first, which is what the list endpoint wants. The id tiebreak keeps
         # ordering stable when two rows share a timestamp.
         ordering = ["-created_at", "-id"]
+        indexes = [
+            # Backs the list endpoint's newest-first ordering. Without it every list is
+            # a full scan plus a sort, and pagination alone doesn't help — a LIMIT still
+            # pays for sorting the whole table first.
+            models.Index(fields=["-created_at", "-id"], name="transfer_newest_first"),
+        ]
         constraints = [
             # "No provider id" must be NULL and never the empty string. The column is
             # unique, so one blank row would be tolerated and the second would fail on the
@@ -74,7 +80,16 @@ class Transfer(models.Model):
             models.CheckConstraint(
                 condition=~models.Q(provider_transfer_id=""),
                 name="provider_transfer_id_is_null_or_non_empty",
-            )
+            ),
+            # The serializer enforces this for the API, but the serializer is not the
+            # only writer — factories, shells, management commands and future services
+            # all reach the ORM directly, and none of them run field validators. For an
+            # invariant of the money domain, the database is the one altitude nothing
+            # can bypass.
+            models.CheckConstraint(
+                condition=models.Q(amount__gte=Decimal("0.01")),
+                name="amount_at_least_one_minor_unit",
+            ),
         ]
 
     def __str__(self) -> str:
