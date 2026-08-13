@@ -546,3 +546,16 @@ non-obvious calls lives there and in the code comments, so a reviewer meets the 
 the thing it justifies. The five `fix(...)` commits on `feat/provider-webhook` are a genuine
 review pass over my own work, kept as separate commits rather than squashed away, because the
 bugs and their fixes are more informative than a clean history would have been.
+
+All five branches were merged with merge commits, never squashed, so that history survives on
+`main`. CI (`.github/workflows/ci.yml`) runs both suites plus a production build on every push
+and PR — the same commands this README gives a human, on the same versions, so "CI is green"
+and "it runs on a reviewer's machine" are one claim, not two.
+
+## 10. Time spent
+
+About **11 focused hours over two days** (12–13 Aug), measured from the commit record rather
+than estimated: commit timestamps span 11:14–17:51 on the first day (backend: state machine
+through webhook, plus a review pass over my own branches) and 12:05–16:41 on the second
+(frontend, a UI/UX pass, README). The brief's 8–12 hour expectation held without squeezing —
+mostly because the out-of-scope list was taken at its word.
