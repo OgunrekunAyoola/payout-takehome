@@ -1,0 +1,32 @@
+# Local orchestration of both halves: `docker compose up --build`, then open
+# http://localhost:3000. The values below are demo values for a machine-local run —
+# a real deployment injects its own secrets and never writes them into a compose file.
+#
+# The backend runs in deployment shape (DEBUG off, gunicorn), which is why the webhook
+# secret must be explicit here: settings.py refuses the repo-published dev fallback
+# outside DEBUG. The frontend signs simulated webhooks with the same secret, server-side.
+#
+# SQLite lives inside the backend container: `docker compose down` discards the ledger,
+# which is the right property for a demo and documented in the README.
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    environment:
+      DJANGO_DEBUG: "false"
+      DJANGO_SECRET_KEY: compose-local-demo-only
+      # "backend" so the frontend's server-side fetches pass host validation.
+      DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,backend
+      PROVIDER_WEBHOOK_SECRET: compose-demo-webhook-secret
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    environment:
+      # Service-name DNS on the compose network; the browser never sees this URL.
+      BACKEND_URL: http://backend:8000
+      PROVIDER_WEBHOOK_SECRET: compose-demo-webhook-secret
+    depends_on:
+      - backend

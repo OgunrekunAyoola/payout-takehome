@@ -42,6 +42,19 @@ npm run dev
 Then open <http://localhost:3000>. No `.env.local` is needed either; `frontend/.env.example`
 documents both variables if you want to point at a different backend.
 
+### Or with Docker
+
+```bash
+docker compose up --build
+```
+
+Then open <http://localhost:3000>. This runs the backend in deployment shape — `DEBUG` off,
+gunicorn, an explicit webhook secret (the boot-time guard refuses the dev fallback outside
+`DEBUG`, so the compose file must provide one). The values in `docker-compose.yml` are
+machine-local demo values; a real deployment injects its own. SQLite lives inside the backend
+container, so `docker compose down` discards the demo ledger. Ports are overridable:
+`BACKEND_PORT=18000 FRONTEND_PORT=13000 docker compose up`.
+
 ### Tests
 
 ```bash
@@ -456,8 +469,10 @@ browser is what exposed it, which is the argument for doing that at all. Now loc
 - **A real provider integration** — no HTTP, no timeouts, no retries.
 - **Structured logging, metrics, tracing.** The 409/404 paths log where a human would need them;
   there is no metrics pipeline.
-- **Docker.** Optional per the brief. Both halves start with two commands and no services to
-  orchestrate; a compose file would have been ceremony around `runserver` and `next dev`.
+- **Docker orchestration beyond local compose.** The Dockerfiles and compose file run both
+  halves in deployment shape, but there is no registry push, no healthcheck/restart policy
+  tuning, and SQLite stays inside the container — the compose file is a local demo, not a
+  production topology.
 
 ---
 
