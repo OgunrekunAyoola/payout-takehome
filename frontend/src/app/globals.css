@@ -270,6 +270,11 @@ body {
   font-size: 12.5px;
 }
 
+/* Inline timestamps must never break across lines — "09:41:58\nUTC" reads as two facts. */
+.nowrap {
+  white-space: nowrap;
+}
+
 .muted {
   color: var(--text-3);
 }
@@ -692,7 +697,7 @@ body {
   list-style: none;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-3);
+  gap: 10px;
   margin: var(--space-4) 0 0;
   padding: 0;
 }
@@ -700,41 +705,102 @@ body {
 .stage {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding-top: var(--space-2);
-  border-top: 2px solid var(--border);
+}
+
+/* The bar is a real element rather than a border so the active segment can clip a
+   sweep inside it. 3px and fully rounded; colour carries the segment's state. */
+.stage__bar {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--border);
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 7px;
 }
 
 .stage__label {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 600;
+  line-height: 1.3;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-3);
+  letter-spacing: 0.09em;
+  color: var(--text-2);
+  margin-bottom: 1px;
 }
 
 .stage__value {
-  font-size: 12.5px;
-  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
 }
 
-.stage--done {
-  border-top-color: var(--st-completed-dot);
+/* A stage that has happened: quiet, factual, no hue — the past needs no attention. */
+.stage--past .stage__bar {
+  background: var(--text-3);
 }
 
+/* The stage holding the money right now. The highlight crosses the bar once per poll
+   cycle — motion caused by a real recurring event, stopping when polling stops. */
+.stage--active .stage__bar {
+  background: var(--st-processing-dot);
+}
+
+.stage--active .stage__bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 30%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.85), transparent);
+  animation: po-sweep var(--poll-interval) linear infinite;
+}
+
+.stage--active .stage__label,
+.stage--active .stage__value {
+  color: var(--st-processing-text);
+}
+
+/* Settled: the one segment whose hue carries the outcome, matching the badge. */
+.stage--settled-completed .stage__bar {
+  background: var(--st-completed-dot);
+}
+.stage--settled-completed .stage__label,
+.stage--settled-completed .stage__value {
+  color: var(--st-completed-text);
+}
+.stage--settled-failed .stage__bar {
+  background: var(--st-failed-dot);
+}
+.stage--settled-failed .stage__label,
+.stage--settled-failed .stage__value {
+  color: var(--st-failed-text);
+}
+.stage--settled-cancelled .stage__bar {
+  background: var(--st-cancelled-dot);
+}
+.stage--settled-cancelled .stage__label,
+.stage--settled-cancelled .stage__value {
+  color: var(--st-cancelled-text);
+}
+
+.stage--future .stage__label,
 .stage--future .stage__value {
   color: var(--text-3);
 }
 
 /* Dashed, and labelled "unknown — no ETA exists". A design element whose entire job is
    to refuse to imply a future we cannot see. A progress bar here would be a lie. */
-.stage--unknown {
-  border-top-style: dashed;
-  border-top-color: var(--st-processing-dot);
+.stage--unknown .stage__bar {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--border-strong) 0 5px,
+    transparent 5px 10px
+  );
 }
 
 .stage--unknown .stage__value {
-  color: var(--text-3);
   font-style: italic;
 }
 
@@ -876,6 +942,18 @@ body {
   }
   50% {
     opacity: 1;
+  }
+}
+
+/* The active custody segment's highlight: crosses the bar once per poll interval.
+   320% not 100%, because the highlight is 30% wide and must fully exit the clipped
+   bar (and rest a beat) before re-entering — one clean pass per poll, no wraparound. */
+@keyframes po-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(320%);
   }
 }
 

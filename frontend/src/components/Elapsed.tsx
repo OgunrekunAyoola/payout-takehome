@@ -49,7 +49,7 @@ function formatDuration(ms: number): string {
   const minutes = Math.floor((total % 3600) / 60);
   const seconds = total % 60;
   const pad = (n: number) => String(n).padStart(2, "0");
-  return hours > 0
-    ? `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
-    : `${pad(minutes)}:${pad(seconds)}`;
+  // Always hh:mm:ss, even under an hour: the fixed shape means the counter never
+  // reflows as a wait crosses the hour, and a glance reads magnitude from position.
+  return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
 }
