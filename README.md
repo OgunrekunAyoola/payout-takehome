@@ -19,6 +19,11 @@ Two terminals. The frontend talks to the backend, so start the backend first.
 
 ### Backend (port 8000)
 
+**Django 6.1 requires Python 3.12 or newer.** Check with `python3 --version` first: macOS
+still ships 3.9 as `python3`, and on 3.9 the install fails with `No matching distribution
+found for Django==6.1`. If yours is older, name a newer interpreter in the first line
+(`python3.12 -m venv .venv`); everything after it is unchanged.
+
 ```bash
 cd backend
 python3 -m venv .venv
