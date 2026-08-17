@@ -737,6 +737,14 @@ body {
   color: var(--text-3);
 }
 
+/* The elapsed counter arrives wrapped in `.numeric`, which is nowrap so money never
+   breaks mid-amount. Here that would overrun a third-of-a-card column on a phone and
+   collide with the next segment, so let it wrap — the duration itself contains no
+   spaces, so it stays whole and only the trailing word moves down. */
+.stage__value .numeric {
+  white-space: normal;
+}
+
 /* A stage that has happened: quiet, factual, no hue — the past needs no attention. */
 .stage--past .stage__bar {
   background: var(--text-3);
@@ -755,6 +763,16 @@ body {
   width: 30%;
   background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.85), transparent);
   animation: po-sweep var(--poll-interval) linear infinite;
+}
+
+/* Reduced motion has to remove the highlight, not just stop it. The global
+   `animation: none` below would freeze it at its start position — a bright band over the
+   leading third of the bar, which reads as a 30%-complete progress bar. That is the one
+   claim this whole screen exists to refuse, so the honest still frame is no highlight. */
+@media (prefers-reduced-motion: reduce) {
+  .stage--active .stage__bar::after {
+    display: none;
+  }
 }
 
 .stage--active .stage__label,
@@ -946,14 +964,15 @@ body {
 }
 
 /* The active custody segment's highlight: crosses the bar once per poll interval.
-   320% not 100%, because the highlight is 30% wide and must fully exit the clipped
-   bar (and rest a beat) before re-entering — one clean pass per poll, no wraparound. */
+   The highlight is 30% of the bar wide and translateX is a share of its *own* width, so
+   clearing the clipped bar entirely takes 100/30 ≈ 334%. Anything short of that leaves a
+   sliver parked at the right edge that snaps away on loop; 340% exits cleanly. */
 @keyframes po-sweep {
   from {
     transform: translateX(-100%);
   }
   to {
-    transform: translateX(320%);
+    transform: translateX(340%);
   }
 }
 
