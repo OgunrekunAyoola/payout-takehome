@@ -665,6 +665,11 @@ body {
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-4);
+  /* The badge wraps below the amount rather than being pushed out of the card. The
+     amount is a 30px nowrap number, so it cannot shrink to make room; without this the
+     status — the one fact this page exists to show — is clipped mid-word by the card's
+     own overflow at phone widths. */
+  flex-wrap: wrap;
 }
 
 .custody__amount {
