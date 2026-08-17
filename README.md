@@ -561,13 +561,31 @@ carrying its code and the tests for the edge cases it introduces:
    commits: the accessibility and refusal-vs-failure fixes, then tokens and type, then the
    custody structure and the waiting screen
 
+Then a second pass, after the feature work was done, driven by **using the app rather than by
+failing tests** — which is why these are separate branches rather than amendments:
+
+6. `fix/idempotency-key-hydration` — two UI defects: the idempotency key was minted in a
+   `useState` initialiser, which also runs during SSR, so the HTML and the hydrated client
+   disagreed; and a wide amount pushed the transfers table underneath the create form,
+   because a table will not shrink below its content's minimum width
+7. `feat/docker` — Dockerfiles and compose, with the backend in deployment shape (`DEBUG`
+   off, gunicorn) so the image has to satisfy the boot-time secret guard rather than bypass it
+8. `feat/design-pass-custody` — the waiting screen's custody line, plus four defects found by
+   verifying it: a `prefers-reduced-motion` path that froze the sweep into something that read
+   as a 30%-complete progress bar, an elapsed counter overrunning its column on a phone, a
+   sweep that never fully cleared its bar, and a status badge clipped out of the card below
+   430px
+9. `fix/readme-python-version` — the run instructions did not state that Django 6.1 needs
+   Python 3.12, so on a stock macOS the first command in this README failed. CI never caught
+   it because `setup-python` pins the version
+
 Commit messages carry the reasoning, not a restatement of the diff — the *why* for the
 non-obvious calls lives there and in the code comments, so a reviewer meets the argument next to
 the thing it justifies. The five `fix(...)` commits on `feat/provider-webhook` are a genuine
 review pass over my own work, kept as separate commits rather than squashed away, because the
 bugs and their fixes are more informative than a clean history would have been.
 
-All five branches were merged with merge commits, never squashed, so that history survives on
+All nine branches were merged with merge commits, never squashed, so that history survives on
 `main`. CI (`.github/workflows/ci.yml`) runs both suites plus a production build on every push
 and PR — the same commands this README gives a human, on the same versions, so "CI is green"
 and "it runs on a reviewer's machine" are one claim, not two.
