@@ -118,7 +118,8 @@ function TransferGroup({
         <span className="group__note">{note}</span>
       </header>
 
-      <table className="table">
+      <div className="table-scroll">
+        <table className="table">
         <caption className="visually-hidden">
           {title} transfers, newest first
         </caption>
@@ -153,7 +154,8 @@ function TransferGroup({
             </tr>
           ))}
         </tbody>
-      </table>
+        </table>
+      </div>
     </section>
   );
 }

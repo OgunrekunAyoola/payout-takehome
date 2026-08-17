@@ -39,11 +39,17 @@ export function CreateTransferForm({
   >(action, { status: "idle" });
   const router = useRouter();
 
-  // Minted lazily on the client. `useState` with an initialiser rather than a plain
-  // ref so the value is created once per mount without running during SSR, where
-  // crypto.randomUUID may be unavailable and a server-minted key would be shared by
-  // every user who was served that HTML.
-  const [idempotencyKey, setIdempotencyKey] = useState<string>(() => newKey());
+  // Minted after mount, same gate as Elapsed. A `useState` initialiser runs during the
+  // server pass too, so it mints one key in the HTML and a different one on hydration —
+  // a mismatch React reports on every page holding this form. Starting empty keeps the
+  // server pass and the first client pass identical; the key appears a tick later. A
+  // server-minted key is not an option regardless: every user served that HTML would
+  // share it.
+  const [idempotencyKey, setIdempotencyKey] = useState<string>("");
+
+  useEffect(() => {
+    setIdempotencyKey((current) => current || newKey());
+  }, []);
 
   // The inputs are controlled, and that is not a stylistic choice. React resets a form
   // automatically once its action completes — including when the action *failed* — so
@@ -140,7 +146,13 @@ export function CreateTransferForm({
         )}
       </div>
 
-      <button type="submit" className="button button--primary" disabled={pending}>
+      <button
+        type="submit"
+        className="button button--primary"
+        // Also inert for the tick before the key is minted: a create must never be
+        // sent without its idempotency key.
+        disabled={pending || !idempotencyKey}
+      >
         {pending ? "Creating…" : "Create transfer"}
       </button>
 
@@ -153,7 +165,7 @@ export function CreateTransferForm({
       </div>
 
       <p className="form__hint">
-        Sent with <code>Idempotency-Key: {idempotencyKey}</code>. Retrying after a
+        Sent with <code>Idempotency-Key: {idempotencyKey || "…"}</code>. Retrying after a
         failure reuses this key, so a retry replays the original transfer instead of
         creating a second one.
       </p>

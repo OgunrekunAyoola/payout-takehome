@@ -217,13 +217,20 @@ body {
   margin-bottom: var(--space-4);
 }
 
-.table {
-  width: 100%;
-  border-collapse: collapse;
+/* A table refuses to shrink below its content's minimum width no matter what its grid
+   track allows, so a wide row (one large amount is enough) would otherwise push the
+   table under the aside and clip badges mid-word. The frame scrolls horizontally
+   instead; the page never does. */
+.table-scroll {
+  overflow-x: auto;
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-card);
-  overflow: hidden;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
 }
 
 .table th,
