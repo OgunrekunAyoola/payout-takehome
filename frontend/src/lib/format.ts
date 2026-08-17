@@ -32,6 +32,17 @@ export function formatAmount(amount: string, currency: Currency): string {
   }
 }
 
+/** Time of day only, for places the date is already established (the custody line's
+    segments — the full date lives once, in the facts strip, not five times). */
+export function formatTime(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return `${new Intl.DateTimeFormat("en-GB", {
+    timeStyle: "medium",
+    timeZone: "UTC",
+  }).format(date)} UTC`;
+}
+
 /** UTC everywhere, matching the backend, and labelled so it cannot be misread. */
 export function formatTimestamp(iso: string): string {
   const date = new Date(iso);

@@ -53,6 +53,30 @@ describe("CustodyHeader — what waiting looks like", () => {
     expect(screen.getByText(/every 3 seconds/i)).toBeInTheDocument();
   });
 
+  /**
+   * The `theirs` sentence is composed in the JSX rather than returned by `custodyLine`,
+   * because the timestamp inside it is rendered as monospace. That means
+   * `custodyLine("processing")` no longer reaches the screen, so the copy a waiting
+   * operator actually reads is only covered here — reword the JSX without this test and
+   * the suite stays green while the page says something else.
+   */
+  it("names when the provider took custody, and who can end the wait", () => {
+    render(
+      <CustodyHeader
+        transfer={makeTransfer({
+          status: "processing",
+          updated_at: "2026-08-14T09:41:58Z",
+        })}
+      />,
+    );
+
+    const line = screen.getByText(/with the provider since/i);
+    expect(line).toHaveTextContent("09:41:58 UTC");
+    // Whose move it is now — the half of the sentence that tells an operator to stop
+    // looking for a button.
+    expect(line).toHaveTextContent(/only their webhook can resolve it/i);
+  });
+
   it("beats a heartbeat only while there is something to wait for", () => {
     const { container: waiting } = render(
       <CustodyHeader transfer={makeTransfer({ status: "processing" })} />,

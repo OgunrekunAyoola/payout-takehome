@@ -8,8 +8,8 @@ settled asynchronously by signed provider webhooks.
 
 Everything the brief asks for is implemented: the state machine, idempotent create, ops
 submit/cancel, the signed provider webhook with dedupe by `event_id`, scenarios A–E, and a
-minimal UI that creates a transfer and watches its status change. **94 tests** — 57 backend,
-37 frontend.
+minimal UI that creates a transfer and watches its status change. **95 tests** — 57 backend,
+38 frontend.
 
 ---
 
@@ -59,7 +59,7 @@ container, so `docker compose down` discards the demo ledger. Ports are overrida
 
 ```bash
 cd backend  && .venv/bin/python manage.py test transfers   # 57 tests
-cd frontend && npm test                                    # 37 tests
+cd frontend && npm test                                    # 38 tests
 ```
 
 Also available in the frontend: `npm run typecheck`, `npm run build`.

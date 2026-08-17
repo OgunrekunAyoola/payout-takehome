@@ -270,6 +270,11 @@ body {
   font-size: 12.5px;
 }
 
+/* Inline timestamps must never break across lines — "09:41:58\nUTC" reads as two facts. */
+.nowrap {
+  white-space: nowrap;
+}
+
 .muted {
   color: var(--text-3);
 }
@@ -660,6 +665,11 @@ body {
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-4);
+  /* The badge wraps below the amount rather than being pushed out of the card. The
+     amount is a 30px nowrap number, so it cannot shrink to make room; without this the
+     status — the one fact this page exists to show — is clipped mid-word by the card's
+     own overflow at phone widths. */
+  flex-wrap: wrap;
 }
 
 .custody__amount {
@@ -692,7 +702,7 @@ body {
   list-style: none;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--space-3);
+  gap: 10px;
   margin: var(--space-4) 0 0;
   padding: 0;
 }
@@ -700,41 +710,120 @@ body {
 .stage {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding-top: var(--space-2);
-  border-top: 2px solid var(--border);
+}
+
+/* The bar is a real element rather than a border so the active segment can clip a
+   sweep inside it. 3px and fully rounded; colour carries the segment's state. */
+.stage__bar {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--border);
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 7px;
 }
 
 .stage__label {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 600;
+  line-height: 1.3;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-3);
+  letter-spacing: 0.09em;
+  color: var(--text-2);
+  margin-bottom: 1px;
 }
 
 .stage__value {
-  font-size: 12.5px;
-  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
 }
 
-.stage--done {
-  border-top-color: var(--st-completed-dot);
+/* The elapsed counter arrives wrapped in `.numeric`, which is nowrap so money never
+   breaks mid-amount. Here that would overrun a third-of-a-card column on a phone and
+   collide with the next segment, so let it wrap — the duration itself contains no
+   spaces, so it stays whole and only the trailing word moves down. */
+.stage__value .numeric {
+  white-space: normal;
 }
 
+/* A stage that has happened: quiet, factual, no hue — the past needs no attention. */
+.stage--past .stage__bar {
+  background: var(--text-3);
+}
+
+/* The stage holding the money right now. The highlight crosses the bar once per poll
+   cycle — motion caused by a real recurring event, stopping when polling stops. */
+.stage--active .stage__bar {
+  background: var(--st-processing-dot);
+}
+
+.stage--active .stage__bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 30%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.85), transparent);
+  animation: po-sweep var(--poll-interval) linear infinite;
+}
+
+/* Reduced motion has to remove the highlight, not just stop it. The global
+   `animation: none` below would freeze it at its start position — a bright band over the
+   leading third of the bar, which reads as a 30%-complete progress bar. That is the one
+   claim this whole screen exists to refuse, so the honest still frame is no highlight. */
+@media (prefers-reduced-motion: reduce) {
+  .stage--active .stage__bar::after {
+    display: none;
+  }
+}
+
+.stage--active .stage__label,
+.stage--active .stage__value {
+  color: var(--st-processing-text);
+}
+
+/* Settled: the one segment whose hue carries the outcome, matching the badge. */
+.stage--settled-completed .stage__bar {
+  background: var(--st-completed-dot);
+}
+.stage--settled-completed .stage__label,
+.stage--settled-completed .stage__value {
+  color: var(--st-completed-text);
+}
+.stage--settled-failed .stage__bar {
+  background: var(--st-failed-dot);
+}
+.stage--settled-failed .stage__label,
+.stage--settled-failed .stage__value {
+  color: var(--st-failed-text);
+}
+.stage--settled-cancelled .stage__bar {
+  background: var(--st-cancelled-dot);
+}
+.stage--settled-cancelled .stage__label,
+.stage--settled-cancelled .stage__value {
+  color: var(--st-cancelled-text);
+}
+
+.stage--future .stage__label,
 .stage--future .stage__value {
   color: var(--text-3);
 }
 
 /* Dashed, and labelled "unknown — no ETA exists". A design element whose entire job is
    to refuse to imply a future we cannot see. A progress bar here would be a lie. */
-.stage--unknown {
-  border-top-style: dashed;
-  border-top-color: var(--st-processing-dot);
+.stage--unknown .stage__bar {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--border-strong) 0 5px,
+    transparent 5px 10px
+  );
 }
 
 .stage--unknown .stage__value {
-  color: var(--text-3);
   font-style: italic;
 }
 
@@ -876,6 +965,19 @@ body {
   }
   50% {
     opacity: 1;
+  }
+}
+
+/* The active custody segment's highlight: crosses the bar once per poll interval.
+   The highlight is 30% of the bar wide and translateX is a share of its *own* width, so
+   clearing the clipped bar entirely takes 100/30 ≈ 334%. Anything short of that leaves a
+   sliver parked at the right edge that snaps away on loop; 340% exits cleanly. */
+@keyframes po-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(340%);
   }
 }
 

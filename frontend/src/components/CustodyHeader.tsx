@@ -1,6 +1,6 @@
 import { Elapsed } from "./Elapsed";
 import { StatusBadge } from "./StatusBadge";
-import { formatAmount, formatTimestamp } from "@/lib/format";
+import { formatAmount, formatTime, formatTimestamp } from "@/lib/format";
 import { custodyLine, zoneFor } from "@/lib/transitions";
 import type { Transfer } from "@/lib/types";
 
@@ -51,7 +51,17 @@ export function CustodyHeader({ transfer }: { transfer: Transfer }) {
         </div>
       </div>
 
-      <p className="custody__line">{custodyLine(transfer.status)}</p>
+      <p className="custody__line">
+        {zone === "theirs" ? (
+          <>
+            With the provider since{" "}
+            <span className="mono nowrap">{formatTime(transfer.updated_at)}</span>.
+            Only their webhook can resolve it.
+          </>
+        ) : (
+          custodyLine(transfer.status)
+        )}
+      </p>
 
       {/*
         Stage, not progress. Only `created_at` and `updated_at` are exposed by the API,
@@ -61,12 +71,26 @@ export function CustodyHeader({ transfer }: { transfer: Transfer }) {
         webhook events, which it deliberately does not yet.
       */}
       <ol className="stages">
-        <li className="stage stage--done">
+        <li className="stage stage--past">
+          <span className="stage__bar" aria-hidden="true" />
           <span className="stage__label">Created</span>
-          <span className="stage__value">{formatTimestamp(transfer.created_at)}</span>
+          <span className="stage__value">{formatTime(transfer.created_at)}</span>
         </li>
 
-        <li className={`stage ${withProvider ? "stage--done" : "stage--future"}`}>
+        {/* The segment where money currently sits gets the sweep: a highlight crossing
+            the bar once per poll cycle, motion caused by a real recurring event. It
+            exists only while the provider holds the money — everywhere else the bar is
+            still, and the stillness is true. */}
+        <li
+          className={`stage ${
+            zone === "theirs"
+              ? "stage--active"
+              : withProvider
+                ? "stage--past"
+                : "stage--future"
+          }`}
+        >
+          <span className="stage__bar" aria-hidden="true" />
           <span className="stage__label">With provider</span>
           <span className="stage__value">
             {zone === "theirs" ? (
@@ -85,16 +109,17 @@ export function CustodyHeader({ transfer }: { transfer: Transfer }) {
         <li
           className={`stage ${
             zone === "settled"
-              ? "stage--done"
+              ? `stage--settled stage--settled-${transfer.status}`
               : zone === "theirs"
                 ? "stage--unknown"
                 : "stage--future"
           }`}
         >
+          <span className="stage__bar" aria-hidden="true" />
           <span className="stage__label">Settled</span>
           <span className="stage__value">
             {zone === "settled"
-              ? formatTimestamp(transfer.updated_at)
+              ? formatTime(transfer.updated_at)
               : zone === "theirs"
                 ? "unknown — no ETA exists"
                 : "—"}
@@ -102,10 +127,16 @@ export function CustodyHeader({ transfer }: { transfer: Transfer }) {
         </li>
       </ol>
 
+      {/* "Last checked" is stamped on the server at render time, which is exactly the
+          moment the data was fetched — every poll re-runs this server component, so the
+          stamp advances with each real check and freezes when polling stops. No client
+          clock is involved, so there is nothing to hydrate wrong: the string arrives
+          finished. */}
       {zone === "theirs" && (
         <p className="custody__poll">
-          Checking for the provider&apos;s answer every 3 seconds — this page updates
-          itself, no reload needed.
+          Checking for the provider&apos;s answer every 3 seconds. Last checked{" "}
+          <span className="mono nowrap">{formatTime(new Date().toISOString())}</span>{" "}
+          — this page updates itself, no reload needed.
         </p>
       )}
 
